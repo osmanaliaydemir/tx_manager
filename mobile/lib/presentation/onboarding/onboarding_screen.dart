@@ -50,10 +50,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       await ref.read(strategyRepositoryProvider).saveStrategy(strategy);
       if (mounted) context.go('/home');
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -97,15 +98,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     onNext: _nextPage,
                   ),
 
-                  // Step 2: Tone (We can define l10n later for tones)
+                  // Step 2: Tone
                   _buildStep(
-                    title: "Ses Tonunu Seç", // TODO: L10n
-                    subtitle: "Takipçilerine nasıl hitap edeceksin?",
+                    title: l10n.onboardingStep2Title,
+                    subtitle: l10n.onboardingStep2Subtitle,
                     content: Column(
                       children: ToneVoice.values.map((tone) {
                         final isSelected = _selectedTone == tone;
                         return _buildOptionCard(
-                          title: tone.name.toUpperCase(), // TODO: Better naming
+                          title: _getToneTitle(tone, l10n),
                           isSelected: isSelected,
                           onTap: () => setState(() => _selectedTone = tone),
                         );
@@ -126,6 +127,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
+  // ... (existing _buildStep and _buildOptionCard, no changes needed) ...
   Widget _buildStep({
     required String title,
     required String subtitle,
@@ -218,6 +220,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return l10n.goalCommunity;
       case StrategyGoal.sales:
         return l10n.goalSales;
+    }
+  }
+
+  String _getToneTitle(ToneVoice tone, AppLocalizations l10n) {
+    switch (tone) {
+      case ToneVoice.professional:
+        return l10n.toneProfessional;
+      case ToneVoice.friendly:
+        return l10n.toneFriendly;
+      case ToneVoice.witty:
+        return l10n.toneWitty;
+      case ToneVoice.minimalist:
+        return l10n.toneMinimalist;
+      case ToneVoice.provocative:
+        return l10n.toneProvocative;
     }
   }
 }

@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'TX Manager';
+  String get appTitle => 'TX Asistan';
 
   @override
   String get loginConnect => 'Connect with X';
@@ -25,6 +25,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'We will tailor suggestions based on this.';
 
   @override
+  String get onboardingStep2Title => 'Choose your Tone of Voice';
+
+  @override
+  String get onboardingStep2Subtitle =>
+      'How should you sound to your followers?';
+
+  @override
   String get goalAuthority => 'Build Authority';
 
   @override
@@ -35,4 +42,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get goalSales => 'Drive Sales';
+
+  @override
+  String get goalGrowFollowers => 'Grow Followers';
+
+  @override
+  String get goalDriveTraffic => 'Drive Traffic';
+
+  @override
+  String get toneProfessional => 'Professional';
+
+  @override
+  String get toneFriendly => 'Friendly & Warm';
+
+  @override
+  String get toneWitty => 'Witty & Fun';
+
+  @override
+  String get toneMinimalist => 'Minimalist';
+
+  @override
+  String get toneProvocative => 'Provocative';
 }

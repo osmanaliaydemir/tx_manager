@@ -20,6 +20,10 @@
     "@onboardingStep1Subtitle": {
         "description": "Subtitle for the first step of onboarding"
     },
+    "onboardingStep2Title": "Ses Tonunu Seç",
+    "@onboardingStep2Title": {},
+    "onboardingStep2Subtitle": "Takipçilerine nasıl hitap edeceksin?",
+    "@onboardingStep2Subtitle": {},
     "goalAuthority": "Otorite Kurmak",
     "@goalAuthority": {
         "description": "Goal option: Authority"
@@ -35,5 +39,19 @@
     "goalSales": "Satış Yapmak",
     "@goalSales": {
         "description": "Goal option: Sales"
-    }
+    },
+    "goalGrowFollowers": "Takipçi Artırmak",
+    "@goalGrowFollowers": {},
+    "goalDriveTraffic": "Trafik Çekmek",
+    "@goalDriveTraffic": {},
+    "toneProfessional": "Profesyonel",
+    "@toneProfessional": {},
+    "toneFriendly": "Samimi & Sıcak",
+    "@toneFriendly": {},
+    "toneWitty": "Esprili & Eğlenceli",
+    "@toneWitty": {},
+    "toneMinimalist": "Minimalist",
+    "@toneMinimalist": {},
+    "toneProvocative": "Kışkırtıcı / İddialı",
+    "@toneProvocative": {}
 }

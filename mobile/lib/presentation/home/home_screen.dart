@@ -5,6 +5,9 @@ import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/data/repositories/suggestion_repository.dart';
 import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
+import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
+import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
+import 'package:go_router/go_router.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   List<ContentSuggestion> _suggestions = [];
   bool _isLoading = true;
+  UserProfile? _user;
 
   @override
   void initState() {
@@ -29,6 +33,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       duration: const Duration(seconds: 10),
     )..repeat(reverse: true);
     _loadData();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final user = await ref.read(userRepositoryProvider).getMyProfile();
+    if (mounted) setState(() => _user = user);
   }
 
   @override
@@ -112,6 +122,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // ... (build method same)
+
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -131,7 +143,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                "Senin için seçilenler",
+                _user != null
+                    ? "Merhaba, ${_user!.name}"
+                    : "Senin için seçilenler",
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.6),
                   fontSize: 14,
@@ -139,19 +153,100 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppTheme.premiumGradient,
-            ),
-            child: const CircleAvatar(
-              backgroundColor: Colors.black,
-              radius: 20,
-              child: Icon(Icons.person, color: Colors.white),
+          GestureDetector(
+            onTap: _showProfileMenu,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: AppTheme.premiumGradient,
+              ),
+              child: CircleAvatar(
+                backgroundColor: Colors.black,
+                radius: 20,
+                backgroundImage:
+                    _user != null && _user!.profileImageUrl.isNotEmpty
+                    ? NetworkImage(_user!.profileImageUrl)
+                    : null,
+                child: _user == null || _user!.profileImageUrl.isEmpty
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showProfileMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (_user != null) ...[
+                CircleAvatar(
+                  radius: 40,
+                  backgroundImage: _user!.profileImageUrl.isNotEmpty
+                      ? NetworkImage(_user!.profileImageUrl)
+                      : null,
+                  child: _user!.profileImageUrl.isEmpty
+                      ? const Icon(Icons.person, size: 40)
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _user!.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  "@${_user!.username}",
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.redAccent),
+                title: const Text(
+                  "Çıkış Yap",
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+                onTap: () async {
+                  Navigator.pop(sheetContext); // Close sheet using sheetContext
+                  await ref.read(userRepositoryProvider).logout();
+                  if (mounted) context.go('/login'); // Use HomeScreen context
+                },
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
       ),
     );
   }

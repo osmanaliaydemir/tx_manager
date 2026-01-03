@@ -226,7 +226,7 @@ public class XApiService : IXApiService
 
     public async Task<XUserProfile> GetMyUserProfileAsync(string accessToken)
     {
-        var message = new HttpRequestMessage(HttpMethod.Get, "https://api.twitter.com/2/users/me");
+        var message = new HttpRequestMessage(HttpMethod.Get, "https://api.twitter.com/2/users/me?user.fields=profile_image_url");
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         var response = await _httpClient.SendAsync(message);
@@ -238,16 +238,23 @@ public class XApiService : IXApiService
             throw new Exception($"User profile fetch failed: {response.StatusCode}");
         }
 
-        // Expected JSON: { "data": { "id": "...", "name": "...", "username": "..." } }
+        // Expected JSON: { "data": { "id": "...", "name": "...", "username": "...", "profile_image_url": "..." } }
         using var doc = System.Text.Json.JsonDocument.Parse(content);
         var data = doc.RootElement.GetProperty("data");
 
-        return new XUserProfile
+        var profile = new XUserProfile
         {
             Id = data.GetProperty("id").GetString() ?? "",
             Name = data.GetProperty("name").GetString() ?? "",
             Username = data.GetProperty("username").GetString() ?? ""
         };
+
+        if (data.TryGetProperty("profile_image_url", out var img))
+        {
+            profile.ProfileImageUrl = img.GetString() ?? "";
+        }
+
+        return profile;
     }
 
     // Helpers

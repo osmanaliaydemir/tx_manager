@@ -1,0 +1,327 @@
+{
+    "info": {
+        "_postman_id": "tx-manager-api-v1",
+        "name": "TX Manager API",
+        "description": "API collection for TX Manager Application (AI-Powered Social Media Manager)",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Auth",
+            "item": [
+                {
+                    "name": "Login (Connect with X)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Callback (Simulated)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/callback?code=simulated_code&state=simulated_state",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "callback"
+                            ],
+                            "query": [
+                                {
+                                    "key": "code",
+                                    "value": "simulated_code"
+                                },
+                                {
+                                    "key": "state",
+                                    "value": "simulated_state"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Strategy",
+            "item": [
+                {
+                    "name": "Get User Strategy",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/strategy/{{userId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "strategy",
+                                "{{userId}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Strategy",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"primaryGoal\": 2,\n  \"tone\": 1,\n  \"language\": \"Turkish\",\n  \"forbiddenTopics\": \"Politics, Religion\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/strategy/{{userId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "strategy",
+                                "{{userId}}"
+                            ]
+                        },
+                        "description": "PrimaryGoal Enums: 0=GrowFollowers, 1=DriveTraffic, 2=BuildAuthority\nTone Enums: 0=Professional, 1=Witty, 2=Inspirational"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Suggestions (AI)",
+            "item": [
+                {
+                    "name": "Generate Suggestions",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/suggestion/generate/{{userId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "suggestion",
+                                "generate",
+                                "{{userId}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Pending Suggestions",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/suggestion/{{userId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "suggestion",
+                                "{{userId}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Accept Suggestion",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/suggestion/{{suggestionId}}/accept",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "suggestion",
+                                "{{suggestionId}}",
+                                "accept"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Reject Suggestion",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/suggestion/{{suggestionId}}/reject",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "suggestion",
+                                "{{suggestionId}}",
+                                "reject"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Posts",
+            "item": [
+                {
+                    "name": "Create Post (Manual)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"content\":=\"Testing manual post creation\",\n  \"scheduledFor\": \"2026-01-05T10:00:00Z\",\n  \"userId\": \"{{userId}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/posts",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "posts"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Scheduled Posts",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/posts?userId={{userId}}&status=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "posts"
+                            ],
+                            "query": [
+                                {
+                                    "key": "userId",
+                                    "value": "{{userId}}"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "1",
+                                    "description": "0=Draft, 1=Scheduled, 2=Published, 3=Failed"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Published Posts (Analytics)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/posts?userId={{userId}}&status=2",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "posts"
+                            ],
+                            "query": [
+                                {
+                                    "key": "userId",
+                                    "value": "{{userId}}"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "2",
+                                    "description": "Published"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    ""
+                ]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    ""
+                ]
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "https://txmanager-api.runasp.net",
+            "type": "string"
+        },
+        {
+            "key": "userId",
+            "value": "YOUR_USER_ID_HERE",
+            "type": "string"
+        },
+        {
+            "key": "suggestionId",
+            "value": "YOUR_SUGGESTION_ID_HERE",
+            "type": "string"
+        }
+    ]
+}

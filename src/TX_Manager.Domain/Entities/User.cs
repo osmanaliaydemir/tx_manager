@@ -6,6 +6,8 @@ namespace TX_Manager.Domain.Entities;
 public class User : BaseEntity
 {
     public string Username { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string ProfileImageUrl { get; set; } = string.Empty;
     public string XUserId { get; set; } = string.Empty;
     
     // Navigation props

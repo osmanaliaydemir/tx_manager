@@ -24,6 +24,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get onboardingStep1Subtitle => 'Önerilerimiz buna göre şekillenecek.';
 
   @override
+  String get onboardingStep2Title => 'Ses Tonunu Seç';
+
+  @override
+  String get onboardingStep2Subtitle => 'Takipçilerine nasıl hitap edeceksin?';
+
+  @override
   String get goalAuthority => 'Otorite Kurmak';
 
   @override
@@ -34,4 +40,25 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get goalSales => 'Satış Yapmak';
+
+  @override
+  String get goalGrowFollowers => 'Takipçi Artırmak';
+
+  @override
+  String get goalDriveTraffic => 'Trafik Çekmek';
+
+  @override
+  String get toneProfessional => 'Profesyonel';
+
+  @override
+  String get toneFriendly => 'Samimi & Sıcak';
+
+  @override
+  String get toneWitty => 'Esprili & Eğlenceli';
+
+  @override
+  String get toneMinimalist => 'Minimalist';
+
+  @override
+  String get toneProvocative => 'Kışkırtıcı / İddialı';
 }

@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// The name of the application
   ///
   /// In en, this message translates to:
-  /// **'TX Manager'**
+  /// **'TX Asistan'**
   String get appTitle;
 
   /// Text for the login button
@@ -128,6 +128,18 @@ abstract class AppLocalizations {
   /// **'We will tailor suggestions based on this.'**
   String get onboardingStep1Subtitle;
 
+  /// No description provided for @onboardingStep2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your Tone of Voice'**
+  String get onboardingStep2Title;
+
+  /// No description provided for @onboardingStep2Subtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How should you sound to your followers?'**
+  String get onboardingStep2Subtitle;
+
   /// Goal option: Authority
   ///
   /// In en, this message translates to:
@@ -151,6 +163,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Drive Sales'**
   String get goalSales;
+
+  /// No description provided for @goalGrowFollowers.
+  ///
+  /// In en, this message translates to:
+  /// **'Grow Followers'**
+  String get goalGrowFollowers;
+
+  /// No description provided for @goalDriveTraffic.
+  ///
+  /// In en, this message translates to:
+  /// **'Drive Traffic'**
+  String get goalDriveTraffic;
+
+  /// No description provided for @toneProfessional.
+  ///
+  /// In en, this message translates to:
+  /// **'Professional'**
+  String get toneProfessional;
+
+  /// No description provided for @toneFriendly.
+  ///
+  /// In en, this message translates to:
+  /// **'Friendly & Warm'**
+  String get toneFriendly;
+
+  /// No description provided for @toneWitty.
+  ///
+  /// In en, this message translates to:
+  /// **'Witty & Fun'**
+  String get toneWitty;
+
+  /// No description provided for @toneMinimalist.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimalist'**
+  String get toneMinimalist;
+
+  /// No description provided for @toneProvocative.
+  ///
+  /// In en, this message translates to:
+  /// **'Provocative'**
+  String get toneProvocative;
 }
 
 class _AppLocalizationsDelegate

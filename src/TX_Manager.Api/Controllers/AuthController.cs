@@ -54,9 +54,19 @@ public class AuthController : ControllerBase
                 user = new User
                 {
                     XUserId = xProfile.Id,
-                    Username = xProfile.Username
+                    Username = xProfile.Username,
+                    Name = xProfile.Name,
+                    ProfileImageUrl = xProfile.ProfileImageUrl
                 };
                 _context.Users.Add(user);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Update existing user info if changed
+                user.Username = xProfile.Username;
+                user.Name = xProfile.Name;
+                user.ProfileImageUrl = xProfile.ProfileImageUrl;
                 await _context.SaveChangesAsync();
             }
             
@@ -84,5 +94,20 @@ public class AuthController : ControllerBase
         {
             return Redirect($"txmanager://auth-error?message={ex.Message}");
         }
+    }
+
+    [HttpGet("me/{userId}")]
+    public async Task<IActionResult> GetMe(Guid userId)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        return Ok(new 
+        {
+            user.Id,
+            user.Username,
+            user.Name,
+            user.ProfileImageUrl
+        });
     }
 }

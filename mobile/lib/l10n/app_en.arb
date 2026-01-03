@@ -1,6 +1,6 @@
 {
     "@@locale": "en",
-    "appTitle": "TX Manager",
+    "appTitle": "TX Asistan",
     "@appTitle": {
         "description": "The name of the application"
     },
@@ -20,6 +20,10 @@
     "@onboardingStep1Subtitle": {
         "description": "Subtitle for the first step of onboarding"
     },
+    "onboardingStep2Title": "Choose your Tone of Voice",
+    "@onboardingStep2Title": {},
+    "onboardingStep2Subtitle": "How should you sound to your followers?",
+    "@onboardingStep2Subtitle": {},
     "goalAuthority": "Build Authority",
     "@goalAuthority": {
         "description": "Goal option: Authority"
@@ -35,5 +39,19 @@
     "goalSales": "Drive Sales",
     "@goalSales": {
         "description": "Goal option: Sales"
-    }
+    },
+    "goalGrowFollowers": "Grow Followers",
+    "@goalGrowFollowers": {},
+    "goalDriveTraffic": "Drive Traffic",
+    "@goalDriveTraffic": {},
+    "toneProfessional": "Professional",
+    "@toneProfessional": {},
+    "toneFriendly": "Friendly & Warm",
+    "@toneFriendly": {},
+    "toneWitty": "Witty & Fun",
+    "@toneWitty": {},
+    "toneMinimalist": "Minimalist",
+    "@toneMinimalist": {},
+    "toneProvocative": "Provocative",
+    "@toneProvocative": {}
 }
