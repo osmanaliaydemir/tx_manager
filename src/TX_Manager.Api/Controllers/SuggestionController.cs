@@ -44,8 +44,13 @@ public class SuggestionController : ControllerBase
         return Ok(suggestions);
     }
 
+    public class AcceptRequest 
+    {
+        public DateTime? ScheduledFor { get; set; }
+    }
+
     [HttpPost("{id}/accept")]
-    public async Task<IActionResult> AcceptSuggestion(Guid id)
+    public async Task<IActionResult> AcceptSuggestion(Guid id, [FromBody] AcceptRequest request)
     {
         var suggestion = await _context.ContentSuggestions.FindAsync(id);
         if (suggestion == null) return NotFound();
@@ -55,10 +60,18 @@ public class SuggestionController : ControllerBase
 
         suggestion.Status = Domain.Enums.SuggestionStatus.Accepted;
 
-        // Create Scheduled Post
-        // Production Logic: Schedule for tomorrow at random hour between 9-18
-        var randomHour = new Random().Next(9, 18);
-        var scheduledTime = DateTime.UtcNow.Date.AddDays(1).AddHours(randomHour);
+        // Determine Scheduled Time
+        DateTime scheduledTime;
+        if (request != null && request.ScheduledFor.HasValue)
+        {
+            scheduledTime = request.ScheduledFor.Value;
+        }
+        else
+        {
+            // Fallback: Schedule for tomorrow at random hour between 9-18
+            var randomHour = new Random().Next(9, 18);
+            scheduledTime = DateTime.UtcNow.Date.AddDays(1).AddHours(randomHour);
+        }
 
         var post = new Domain.Entities.Post
         {

@@ -54,9 +54,15 @@ class SuggestionRepository {
     }
   }
 
-  Future<void> acceptSuggestion(String suggestionId) async {
+  Future<void> acceptSuggestion(
+    String suggestionId, {
+    DateTime? scheduledFor,
+  }) async {
     await _dio.post(
       '${ApiConstants.baseUrl}/api/suggestion/$suggestionId/accept',
+      data: scheduledFor != null
+          ? {'ScheduledFor': scheduledFor.toIso8601String()}
+          : {},
     );
   }
 

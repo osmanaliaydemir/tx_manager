@@ -324,14 +324,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  final Set<String> _processedIds = {};
+
   bool _onSwipe(int previous, int? current, CardSwiperDirection direction) {
+    if (previous >= _suggestions.length) return true;
     final suggestion = _suggestions[previous];
+
+    if (_processedIds.contains(suggestion.id)) return true;
+
+    _processedIds.add(suggestion.id);
+
     if (direction == CardSwiperDirection.right) {
       ref.read(suggestionRepositoryProvider).acceptSuggestion(suggestion.id);
     } else if (direction == CardSwiperDirection.left) {
       ref.read(suggestionRepositoryProvider).rejectSuggestion(suggestion.id);
     }
     return true;
+  }
+
+  Future<void> _handleSchedule(ContentSuggestion suggestion) async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+
+    if (pickedDate == null) return;
+    if (!mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 10, minute: 0),
+    );
+
+    if (pickedTime == null) return;
+
+    final scheduledDateTime = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    // Mark as processed BEFORE swiping to prevent auto-save in onSwipe
+    _processedIds.add(suggestion.id);
+
+    try {
+      await ref
+          .read(suggestionRepositoryProvider)
+          .acceptSuggestion(suggestion.id, scheduledFor: scheduledDateTime);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Planlandı: ${pickedDate.day}.${pickedDate.month} - ${pickedTime.format(context)}",
+            ),
+          ),
+        );
+      }
+
+      // Trigger swipe animation
+      controller.swipe(CardSwiperDirection.right);
+    } catch (e) {
+      _processedIds.remove(suggestion.id); // Revert if failed
+      debugPrint("Schedule failed: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Hata oluştu: $e")));
+      }
+    }
   }
 
   Widget _buildCard(ContentSuggestion suggestion) {
@@ -436,29 +502,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ],
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    // Action Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                controller.swipe(CardSwiperDirection.left),
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.redAccent,
+                            ),
+                            label: const Text(
+                              "Reddet",
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              side: BorderSide(
+                                color: Colors.redAccent.withValues(alpha: 0.5),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _handleSchedule(suggestion),
+                            icon: const Icon(
+                              Icons.calendar_today,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              "Planla",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              elevation: 8,
+                              shadowColor: AppTheme.primaryColor.withValues(
+                                alpha: 0.4,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
 
               // Bottom Actions Overlay
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.8),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
