@@ -7,7 +7,23 @@ import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
 final suggestionRepositoryProvider = Provider((ref) => SuggestionRepository());
 
 class SuggestionRepository {
-  final Dio _dio = Dio();
+  final Dio _dio =
+      Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 15),
+          ),
+        )
+        ..interceptors.add(
+          LogInterceptor(
+            request: true,
+            requestHeader: true,
+            requestBody: true,
+            responseHeader: true,
+            responseBody: true,
+            error: true,
+          ),
+        );
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   Future<void> triggerGeneration() async {

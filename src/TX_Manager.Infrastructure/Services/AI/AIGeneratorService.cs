@@ -80,6 +80,7 @@ public class AIGeneratorService : IAIGeneratorService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate suggestions for User {UserId}", userId);
+            throw; // Re-throw to let the controller know
         }
     }
 

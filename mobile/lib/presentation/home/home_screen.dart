@@ -48,20 +48,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
-    var items = await ref.read(suggestionRepositoryProvider).getSuggestions();
 
-    if (items.isEmpty) {
-      await ref.read(suggestionRepositoryProvider).triggerGeneration();
-      await Future.delayed(const Duration(seconds: 4));
-      items = await ref.read(suggestionRepositoryProvider).getSuggestions();
-    }
+    try {
+      var items = await ref.read(suggestionRepositoryProvider).getSuggestions();
 
-    if (mounted) {
-      setState(() {
-        _suggestions = items;
-        _isLoading = false;
-      });
+      if (items.isEmpty) {
+        try {
+          await ref.read(suggestionRepositoryProvider).triggerGeneration();
+          await Future.delayed(const Duration(seconds: 4));
+        } catch (e) {
+          debugPrint("Generation trigger failed: $e");
+        }
+        items = await ref.read(suggestionRepositoryProvider).getSuggestions();
+      }
+
+      if (mounted) {
+        setState(() {
+          _suggestions = items;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading data: $e");
+      // Optionally show a snackbar here
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Veri yüklenemedi: $e")));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
