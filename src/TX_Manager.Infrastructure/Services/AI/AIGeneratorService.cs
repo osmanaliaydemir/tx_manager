@@ -33,7 +33,7 @@ public class AIGeneratorService : IAIGeneratorService
         if (strategy == null)
         {
             _logger.LogWarning("Cannot generate suggestions. User {UserId} has no strategy.", userId);
-            return;
+            throw new Exception("User has no strategy defined. Please complete onboarding.");
         }
 
         // 1. Fetch Top Performing Posts (Feedback Loop)
@@ -138,7 +138,7 @@ Structure:
         catch(Exception ex)
         {
             _logger.LogError("JSON Parse Error. Raw: {Json}", json);
-            return new List<SuggestionDto>();
+            throw new Exception($"Failed to parse AI response. Raw: {json}");
         }
     }
 
