@@ -302,9 +302,9 @@ class _PostListState extends ConsumerState<PostList> {
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
+        builder: (dialogContext, setState) {
           final dateStr = DateFormat('dd MMM yyyy').format(scheduledDate);
-          final timeStr = scheduledTime.format(context);
+          final timeStr = scheduledTime.format(dialogContext);
 
           return AlertDialog(
             backgroundColor: const Color(0xFF252A34),
@@ -345,7 +345,7 @@ class _PostListState extends ConsumerState<PostList> {
                     ),
                     onTap: () async {
                       final dt = await showDatePicker(
-                        context: context,
+                        context: dialogContext,
                         initialDate: scheduledDate,
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
@@ -369,7 +369,7 @@ class _PostListState extends ConsumerState<PostList> {
                     ),
                     onTap: () async {
                       final t = await showTimePicker(
-                        context: context,
+                        context: dialogContext,
                         initialTime: scheduledTime,
                       );
                       if (t != null) setState(() => scheduledTime = t);
@@ -380,7 +380,7 @@ class _PostListState extends ConsumerState<PostList> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogContext),
                 child: const Text("İptal"),
               ),
               ElevatedButton(
@@ -402,8 +402,14 @@ class _PostListState extends ConsumerState<PostList> {
                         contentController.text,
                         newDateTime,
                       );
+
+                  // Check specifically if the dialog context is still valid
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+
+                  // Check if the screen is still mounted to refresh data
                   if (mounted) {
-                    Navigator.pop(context);
                     _loadData();
                   }
                 },
