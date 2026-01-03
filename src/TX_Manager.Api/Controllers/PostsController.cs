@@ -32,4 +32,33 @@ public class PostsController : ControllerBase
         var posts = await _postService.GetPostsAsync(userId, status);
         return Ok(posts);
     }
+
+    public class UpdatePostRequest
+    {
+        public string Content { get; set; }
+        public DateTime? ScheduledFor { get; set; }
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdatePostRequest request)
+    {
+        try 
+        {
+             var result = await _postService.UpdatePostAsync(id, request.Content, request.ScheduledFor);
+             return Ok(result);
+        } 
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException e) { return BadRequest(e.Message); }
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        try 
+        {
+            await _postService.DeletePostAsync(id);
+            return NoContent();
+        } 
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
 }

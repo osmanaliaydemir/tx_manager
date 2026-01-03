@@ -26,4 +26,22 @@ class PostRepository {
       return [];
     }
   }
+
+  Future<void> updatePost(
+    String id,
+    String content,
+    DateTime? scheduledFor,
+  ) async {
+    await _dio.put(
+      '${ApiConstants.baseUrl}/api/posts/$id',
+      data: {
+        'content': content,
+        'scheduledFor': scheduledFor?.toIso8601String(),
+      },
+    );
+  }
+
+  Future<void> deletePost(String id) async {
+    await _dio.delete('${ApiConstants.baseUrl}/api/posts/$id');
+  }
 }

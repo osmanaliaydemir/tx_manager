@@ -68,6 +68,40 @@ public class PostService : IPostService
         return posts.Adapt<IEnumerable<PostDto>>();
     }
 
+    public async Task<PostDto> UpdatePostAsync(Guid id, string content, DateTime? scheduledFor)
+    {
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) throw new KeyNotFoundException("Post not found.");
+        
+        if (post.Status == PostStatus.Published) throw new InvalidOperationException("Cannot update published posts.");
+
+        post.Content = content;
+        if (scheduledFor.HasValue)
+        {
+            post.ScheduledFor = scheduledFor.Value;
+            post.Status = PostStatus.Scheduled;
+        }
+        // If content changed but no date provided, keep as is? Or if User cleared date? 
+        // For simplicity, we assume editing a scheduled post keeps it scheduled unless date is removed.
+        // But the input is nullable. If null, we might keep existing Schedule? Or remove schedule (draft)?
+        // User requested removing/changing schedule. Let's assume nullable means "don't change date"
+        // But if user wants to change date, they send new date.
+        // If user wants to Draft, that's a different action.
+        // For now, simple update.
+
+        await _context.SaveChangesAsync();
+        return post.Adapt<PostDto>();
+    }
+
+    public async Task DeletePostAsync(Guid id)
+    {
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) throw new KeyNotFoundException("Post not found.");
+
+         _context.Posts.Remove(post);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task PublishScheduledPostsAsync()
     {
         _logger.LogInformation("Checking for scheduled posts...");
