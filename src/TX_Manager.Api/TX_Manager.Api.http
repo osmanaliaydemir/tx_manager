@@ -1,0 +1,6 @@
+@TX_Manager.Api_HostAddress = http://localhost:5064
+
+GET {{TX_Manager.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

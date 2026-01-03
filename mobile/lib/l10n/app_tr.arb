@@ -1,0 +1,39 @@
+{
+    "@@locale": "tr",
+    "appTitle": "TX Asistan",
+    "@appTitle": {
+        "description": "The name of the application"
+    },
+    "loginConnect": "X ile Bağlan",
+    "@loginConnect": {
+        "description": "Text for the login button"
+    },
+    "loginSubtitle": "İçerik Stratejini Güçlendir",
+    "@loginSubtitle": {
+        "description": "Subtitle text shown on the login screen"
+    },
+    "onboardingStep1Title": "Ana hedefin ne?",
+    "@onboardingStep1Title": {
+        "description": "Title for the first step of onboarding"
+    },
+    "onboardingStep1Subtitle": "Önerilerimiz buna göre şekillenecek.",
+    "@onboardingStep1Subtitle": {
+        "description": "Subtitle for the first step of onboarding"
+    },
+    "goalAuthority": "Otorite Kurmak",
+    "@goalAuthority": {
+        "description": "Goal option: Authority"
+    },
+    "goalEngagement": "Etkileşim Artırmak",
+    "@goalEngagement": {
+        "description": "Goal option: Engagement"
+    },
+    "goalCommunity": "Topluluk Oluşturmak",
+    "@goalCommunity": {
+        "description": "Goal option: Community"
+    },
+    "goalSales": "Satış Yapmak",
+    "@goalSales": {
+        "description": "Goal option: Sales"
+    }
+}

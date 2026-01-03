@@ -1,0 +1,32 @@
+# General
+.DS_Store
+.idea
+.vscode
+*.log
+*.user
+
+# .NET
+bin/
+obj/
+/src/**/bin/
+/src/**/obj/
+*.suo
+*.user
+appsettings.Development.json
+appsettings.local.json
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.pub-cache/
+mobile/.packages
+mobile/build/
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/android/.gradle
+mobile/android/local.properties
+mobile/ios/.generated/
+mobile/ios/Pods/
+mobile/macos/Pods/
+
+# Secrets
+secrets.json
