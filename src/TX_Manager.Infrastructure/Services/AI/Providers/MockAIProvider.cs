@@ -20,7 +20,20 @@ public class MockAIProvider : ILanguageModelProvider
         _logger.LogInformation("Creating MOCK AI Response for prompt: {Prompt}", prompt);
         
         // Simulate thinking
-        return Task.FromResult("Bu bir Mock AI yanıtıdır. Gerçek bir API çağrısı yapılmamıştır. " +
-                               "\n\nÖrnek Tweet: Harika bir gün başlangıcı! 🚀 #Motivasyon");
+        var mockJson = @"[
+    {
+        ""text"": ""Güne enerjik başla! Bugün hedeflerine bir adım daha yaklaşmak için harika bir fırsat. 🚀 #Motivasyon #Başarı"",
+        ""rationale"": ""Bu tweet, takipçilerinize pozitif enerji vererek etkileşimi artırmayı hedefler.""
+    },
+    {
+        ""text"": ""Bazen durup nefes almak, ilerlemek kadar önemlidir. Kendine vakit ayırmayı unutma. 🌿 #KişiselGelişim"",
+        ""rationale"": ""Denge ve huzur temalı bu tweet, kullanıcılarla samimi bir bağ kurar.""
+    },
+    {
+        ""text"": ""Yapay Zeka geleceği şekillendiriyor, peki sen buna hazır mısın? Öğrenmeye bugün başla! 🤖 #AI #Teknoloji"",
+        ""rationale"": ""Teknoloji meraklısı kitleniz için güncel ve ilgi çekici bir soru.""
+    }
+]";
+        return Task.FromResult(mockJson);
     }
 }

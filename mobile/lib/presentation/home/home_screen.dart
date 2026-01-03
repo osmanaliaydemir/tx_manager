@@ -6,6 +6,7 @@ import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/data/repositories/suggestion_repository.dart';
 import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
 import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
+import 'package:dio/dio.dart';
 import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
 import 'package:go_router/go_router.dart';
 
@@ -60,6 +61,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           await Future.delayed(const Duration(seconds: 4));
         } catch (e) {
           debugPrint("Generation trigger failed: $e");
+          rethrow; // Let the outer catch handle it
         }
         items = await ref.read(suggestionRepositoryProvider).getSuggestions();
       }
@@ -70,6 +72,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         });
       }
     } catch (e) {
+      if (e is DioException && e.response?.data != null) {
+        try {
+          // Dio might parse JSON automatically to Map
+          final data = e.response?.data;
+          if (data is Map<String, dynamic>) {
+            final detailed = data['Detailed']?.toString() ?? "";
+            if (detailed.contains("strategy")) {
+              if (mounted) context.go('/onboarding');
+              return;
+            }
+          }
+        } catch (_) {}
+      }
       debugPrint("Error loading data: $e");
       // Optionally show a snackbar here
       if (mounted) {
