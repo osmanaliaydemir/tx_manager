@@ -31,3 +31,4 @@ mobile/macos/Pods/
 
 # Secrets
 secrets.json
+src/TX_Manager.Api/appsettings.Production.json
