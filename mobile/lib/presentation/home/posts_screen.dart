@@ -165,48 +165,42 @@ class _PostListState extends ConsumerState<PostList> {
                       ),
                     ),
                   ),
-                  if (!isPublished)
-                    PopupMenuButton<String>(
-                      icon: const Icon(
-                        Icons.more_vert,
-                        color: Colors.grey,
-                        size: 20,
+                  if (!isPublished) ...[
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap: () => _showEditDialog(post),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.edit,
+                          size: 18,
+                          color: Colors.blueAccent,
+                        ),
                       ),
-                      onSelected: (value) => _handleMenuAction(value, post),
-                      color: const Color(0xFF252A34),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(Icons.edit, size: 18, color: Colors.white),
-                              SizedBox(width: 8),
-                              Text(
-                                "Düzenle",
-                                style: TextStyle(color: Colors.white),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.delete,
-                                size: 18,
-                                color: Colors.redAccent,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                "Sil",
-                                style: TextStyle(color: Colors.redAccent),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _showDeleteDialog(post),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.delete,
+                          size: 18,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -250,14 +244,6 @@ class _PostListState extends ConsumerState<PostList> {
     );
   }
 
-  void _handleMenuAction(String value, dynamic post) {
-    if (value == 'edit') {
-      _showEditDialog(post);
-    } else if (value == 'delete') {
-      _showDeleteDialog(post);
-    }
-  }
-
   Future<void> _showDeleteDialog(dynamic post) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -286,7 +272,15 @@ class _PostListState extends ConsumerState<PostList> {
 
     if (confirm == true) {
       await ref.read(postRepositoryProvider).deletePost(post['id']);
-      _loadData();
+      if (mounted) {
+        _loadData();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Gönderi silindi"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -301,7 +295,7 @@ class _PostListState extends ConsumerState<PostList> {
 
     await showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
+      builder: (_) => StatefulBuilder(
         builder: (dialogContext, setState) {
           final dateStr = DateFormat('dd MMM yyyy').format(scheduledDate);
           final timeStr = scheduledTime.format(dialogContext);
@@ -411,6 +405,12 @@ class _PostListState extends ConsumerState<PostList> {
                   // Check if the screen is still mounted to refresh data
                   if (mounted) {
                     _loadData();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Gönderi güncellendi"),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
                   }
                 },
                 child: const Text(

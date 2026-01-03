@@ -98,6 +98,18 @@ public class PostService : IPostService
         var post = await _context.Posts.FindAsync(id);
         if (post == null) throw new KeyNotFoundException("Post not found.");
 
+        // Unlink related ContentSuggestions to prevent FK violation
+        var linkedSuggestions = await _context.ContentSuggestions
+            .Where(cs => cs.ScheduledPostId == id)
+            .ToListAsync();
+
+        foreach (var suggestion in linkedSuggestions)
+        {
+            suggestion.ScheduledPostId = null;
+            // Optionally, we could reset status to Pending or Rejected, 
+            // but for now, we just remove the link to allow deletion.
+        }
+
          _context.Posts.Remove(post);
         await _context.SaveChangesAsync();
     }
