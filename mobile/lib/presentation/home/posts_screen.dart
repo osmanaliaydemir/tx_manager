@@ -148,7 +148,10 @@ class _PostListState extends ConsumerState<PostList> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: (isPublished ? Colors.green : Colors.orange)
                           .withValues(alpha: 0.2),
@@ -164,32 +167,48 @@ class _PostListState extends ConsumerState<PostList> {
                   ),
                   if (!isPublished)
                     PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
-                  onSelected: (value) => _handleMenuAction(value, post),
-                  color: const Color(0xFF252A34),
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit, size: 18, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text("Düzenle", style: TextStyle(color: Colors.white)),
-                        ],
+                      icon: const Icon(
+                        Icons.more_vert,
+                        color: Colors.grey,
+                        size: 20,
                       ),
+                      onSelected: (value) => _handleMenuAction(value, post),
+                      color: const Color(0xFF252A34),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 18, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text(
+                                "Düzenle",
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete,
+                                size: 18,
+                                color: Colors.redAccent,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                "Sil",
+                                style: TextStyle(color: Colors.redAccent),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, size: 18, color: Colors.redAccent),
-                          SizedBox(width: 8),
-                          Text("Sil", style: TextStyle(color: Colors.redAccent)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -244,11 +263,23 @@ class _PostListState extends ConsumerState<PostList> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF252A34),
-        title: const Text("Gönderiyi Sil", style: TextStyle(color: Colors.white)),
-        content: const Text("Bu gönderiyi silmek istediğinize emin misiniz?", style: TextStyle(color: Colors.grey)),
+        title: const Text(
+          "Gönderiyi Sil",
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          "Bu gönderiyi silmek istediğinize emin misiniz?",
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("İptal")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Sil", style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("İptal"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Sil", style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
@@ -261,7 +292,9 @@ class _PostListState extends ConsumerState<PostList> {
 
   Future<void> _showEditDialog(dynamic post) async {
     final contentController = TextEditingController(text: post['content']);
-    DateTime scheduledDate = DateTime.tryParse(post['scheduledFor'] ?? '')?.toLocal() ?? DateTime.now().add(const Duration(days: 1));
+    DateTime scheduledDate =
+        DateTime.tryParse(post['scheduledFor'] ?? '')?.toLocal() ??
+        DateTime.now().add(const Duration(days: 1));
     TimeOfDay scheduledTime = TimeOfDay.fromDateTime(scheduledDate);
 
     if (!mounted) return;
@@ -275,7 +308,10 @@ class _PostListState extends ConsumerState<PostList> {
 
           return AlertDialog(
             backgroundColor: const Color(0xFF252A34),
-            title: const Text("Gönderiyi Düzenle", style: TextStyle(color: Colors.white)),
+            title: const Text(
+              "Gönderiyi Düzenle",
+              style: TextStyle(color: Colors.white),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -285,60 +321,99 @@ class _PostListState extends ConsumerState<PostList> {
                     maxLines: 4,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                       filled: true,
-                       fillColor: Colors.black12,
-                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: Colors.black12,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text("Tarih", style: TextStyle(color: Colors.grey)),
-                    subtitle: Text(dateStr, style: const TextStyle(color: Colors.white)),
-                    trailing: const Icon(Icons.calendar_today, color: AppTheme.primaryColor),
+                    title: const Text(
+                      "Tarih",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    subtitle: Text(
+                      dateStr,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: const Icon(
+                      Icons.calendar_today,
+                      color: AppTheme.primaryColor,
+                    ),
                     onTap: () async {
-                       final dt = await showDatePicker(
-                           context: context,
-                           initialDate: scheduledDate,
-                           firstDate: DateTime.now(),
-                           lastDate: DateTime.now().add(const Duration(days: 365)),
-                       );
-                       if (dt != null) setState(() => scheduledDate = dt);
+                      final dt = await showDatePicker(
+                        context: context,
+                        initialDate: scheduledDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (dt != null) setState(() => scheduledDate = dt);
                     },
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text("Saat", style: TextStyle(color: Colors.grey)),
-                    subtitle: Text(timeStr, style: const TextStyle(color: Colors.white)),
-                    trailing: const Icon(Icons.access_time, color: AppTheme.primaryColor),
+                    title: const Text(
+                      "Saat",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    subtitle: Text(
+                      timeStr,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: const Icon(
+                      Icons.access_time,
+                      color: AppTheme.primaryColor,
+                    ),
                     onTap: () async {
-                       final t = await showTimePicker(context: context, initialTime: scheduledTime);
-                       if (t != null) setState(() => scheduledTime = t);
+                      final t = await showTimePicker(
+                        context: context,
+                        initialTime: scheduledTime,
+                      );
+                      if (t != null) setState(() => scheduledTime = t);
                     },
                   ),
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("İptal"),
+              ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                ),
                 onPressed: () async {
-                   final newDateTime = DateTime(
-                      scheduledDate.year, scheduledDate.month, scheduledDate.day,
-                      scheduledTime.hour, scheduledTime.minute,
-                   );
-                   await ref.read(postRepositoryProvider).updatePost(
-                      post['id'],
-                      contentController.text,
-                      newDateTime,
-                   );
-                   if (mounted) {
-                     Navigator.pop(context);
-                     _loadData();
-                   }
+                  final newDateTime = DateTime(
+                    scheduledDate.year,
+                    scheduledDate.month,
+                    scheduledDate.day,
+                    scheduledTime.hour,
+                    scheduledTime.minute,
+                  );
+                  await ref
+                      .read(postRepositoryProvider)
+                      .updatePost(
+                        post['id'],
+                        contentController.text,
+                        newDateTime,
+                      );
+                  if (mounted) {
+                    Navigator.pop(context);
+                    _loadData();
+                  }
                 },
-                child: const Text("Kaydet", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  "Kaydet",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           );
