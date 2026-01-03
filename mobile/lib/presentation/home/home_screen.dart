@@ -315,7 +315,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       controller: controller,
       cardsCount: _suggestions.length,
       onSwipe: _onSwipe,
-      numberOfCardsDisplayed: 3,
+      numberOfCardsDisplayed: _suggestions.length < 3 ? _suggestions.length : 3,
       backCardOffset: const Offset(0, 35),
       padding: const EdgeInsets.all(24),
       cardBuilder: (context, index, percentThresholdX, percentThresholdY) {
