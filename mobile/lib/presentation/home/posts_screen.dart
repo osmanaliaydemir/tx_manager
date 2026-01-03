@@ -4,6 +4,13 @@ import 'package:intl/intl.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
 
+final postsProvider = FutureProvider.family<List<dynamic>, String>((
+  ref,
+  status,
+) async {
+  return ref.read(postRepositoryProvider).getPosts(status: status);
+});
+
 class PostsScreen extends ConsumerWidget {
   const PostsScreen({super.key});
 
@@ -37,48 +44,29 @@ class PostsScreen extends ConsumerWidget {
   }
 }
 
-class PostList extends ConsumerStatefulWidget {
+class PostList extends ConsumerWidget {
   final String status;
   const PostList({super.key, required this.status});
 
   @override
-  ConsumerState<PostList> createState() => _PostListState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final postsAsync = ref.watch(postsProvider(status));
 
-class _PostListState extends ConsumerState<PostList> {
-  List<dynamic> _posts = [];
-  bool _isLoading = true;
+    return postsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Center(child: Text('Hata: $err')),
+      data: (posts) {
+        if (posts.isEmpty) return _buildEmptyState();
 
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final data = await ref
-        .read(postRepositoryProvider)
-        .getPosts(status: widget.status);
-    if (mounted) {
-      setState(() {
-        _posts = data;
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_posts.isEmpty) return _buildEmptyState();
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _posts.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final post = _posts[index];
-        return _buildPostCard(post);
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: posts.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final post = posts[index];
+            return PostCard(post: post, status: status);
+          },
+        );
       },
     );
   }
@@ -102,8 +90,22 @@ class _PostListState extends ConsumerState<PostList> {
       ),
     );
   }
+}
 
-  Widget _buildPostCard(dynamic post) {
+class PostCard extends ConsumerStatefulWidget {
+  final dynamic post;
+  final String status;
+
+  const PostCard({super.key, required this.post, required this.status});
+
+  @override
+  ConsumerState<PostCard> createState() => _PostCardState();
+}
+
+class _PostCardState extends ConsumerState<PostCard> {
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
     final content = post['content'] ?? '';
     final dateStr = post['scheduledFor'] ?? post['createdAt'];
     final date = DateTime.tryParse(dateStr)?.toLocal() ?? DateTime.now();
@@ -273,7 +275,9 @@ class _PostListState extends ConsumerState<PostList> {
     if (confirm == true) {
       await ref.read(postRepositoryProvider).deletePost(post['id']);
       if (mounted) {
-        _loadData();
+        // Refresh the list
+        ref.invalidate(postsProvider(widget.status));
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Gönderi silindi"),
@@ -404,7 +408,9 @@ class _PostListState extends ConsumerState<PostList> {
 
                   // Check if the screen is still mounted to refresh data
                   if (mounted) {
-                    _loadData();
+                    // Refresh the list
+                    ref.invalidate(postsProvider(widget.status));
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text("Gönderi güncellendi"),

@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/data/repositories/suggestion_repository.dart';
 import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
@@ -9,6 +8,7 @@ import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
 import 'package:dio/dio.dart';
 import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tx_manager_mobile/presentation/home/posts_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -19,7 +19,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
-  final CardSwiperController controller = CardSwiperController();
+  final PageController _pageController = PageController(viewportFraction: 0.85);
   late AnimationController _animController;
 
   List<ContentSuggestion> _suggestions = [];
@@ -45,6 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void dispose() {
     _animController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -145,7 +146,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         )
                       : _suggestions.isEmpty
                       ? _buildEmptyState()
-                      : _buildSwiper(),
+                      : _buildSuggestionList(),
                 ),
                 // _buildBottomBar() // Moved to overlay or removed if swipe is enough
               ],
@@ -310,36 +311,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _buildSwiper() {
-    return CardSwiper(
-      controller: controller,
-      cardsCount: _suggestions.length,
-      onSwipe: _onSwipe,
-      numberOfCardsDisplayed: _suggestions.length < 3 ? _suggestions.length : 3,
-      backCardOffset: const Offset(0, 35),
-      padding: const EdgeInsets.all(24),
-      cardBuilder: (context, index, percentThresholdX, percentThresholdY) {
-        return _buildCard(_suggestions[index]);
+  Widget _buildSuggestionList() {
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: _suggestions.length,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 24),
+          child: _buildCard(_suggestions[index]),
+        );
       },
     );
   }
 
-  final Set<String> _processedIds = {};
-
-  bool _onSwipe(int previous, int? current, CardSwiperDirection direction) {
-    if (previous >= _suggestions.length) return true;
-    final suggestion = _suggestions[previous];
-
-    if (_processedIds.contains(suggestion.id)) return true;
-
-    _processedIds.add(suggestion.id);
-
-    if (direction == CardSwiperDirection.right) {
-      ref.read(suggestionRepositoryProvider).acceptSuggestion(suggestion.id);
-    } else if (direction == CardSwiperDirection.left) {
-      ref.read(suggestionRepositoryProvider).rejectSuggestion(suggestion.id);
+  Future<void> _handleReject(ContentSuggestion suggestion) async {
+    try {
+      await ref
+          .read(suggestionRepositoryProvider)
+          .rejectSuggestion(suggestion.id);
+      _removeItem(suggestion.id);
+    } catch (e) {
+      debugPrint("Reject failed: $e");
     }
-    return true;
+  }
+
+  void _removeItem(String id) {
+    setState(() {
+      _suggestions.removeWhere((s) => s.id == id);
+    });
   }
 
   Future<void> _handleSchedule(ContentSuggestion suggestion) async {
@@ -369,13 +368,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       pickedTime.minute,
     );
 
-    // Mark as processed BEFORE swiping to prevent auto-save in onSwipe
-    _processedIds.add(suggestion.id);
+    // Processing...
 
     try {
       await ref
           .read(suggestionRepositoryProvider)
           .acceptSuggestion(suggestion.id, scheduledFor: scheduledDateTime);
+
+      // Refresh scheduled posts
+      ref.invalidate(postsProvider('1'));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -387,10 +388,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
       }
 
-      // Trigger swipe animation
-      controller.swipe(CardSwiperDirection.right);
+      _removeItem(suggestion.id);
     } catch (e) {
-      _processedIds.remove(suggestion.id); // Revert if failed
+      // Revert if needed
       debugPrint("Schedule failed: $e");
       if (mounted) {
         ScaffoldMessenger.of(
@@ -508,8 +508,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () =>
-                                controller.swipe(CardSwiperDirection.left),
+                            onPressed: () => _handleReject(suggestion),
                             icon: const Icon(
                               Icons.close,
                               color: Colors.redAccent,

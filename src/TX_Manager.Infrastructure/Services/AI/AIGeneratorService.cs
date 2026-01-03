@@ -60,8 +60,19 @@ public class AIGeneratorService : IAIGeneratorService
             var suggestions = ParseAIResponse(responseText);
 
             // 6. Save to Database
+            var existingTexts = await _context.ContentSuggestions
+                .Where(s => s.UserId == userId)
+                .Select(s => s.SuggestedText)
+                .ToListAsync();
+            
+            var existingSet = new HashSet<string>(existingTexts, StringComparer.OrdinalIgnoreCase);
+
             foreach (var item in suggestions)
             {
+                if (existingSet.Contains(item.Text))
+                {
+                    continue; 
+                }
                 var suggestion = new ContentSuggestion
                 {
                     UserId = userId,
