@@ -146,6 +146,60 @@ public class XApiService : IXApiService
         };
     }
 
+    public async Task<Dictionary<string, TweetMetrics>> GetTweetMetricsAsync(string accessToken, IEnumerable<string> tweetIds)
+    {
+        var ids = string.Join(",", tweetIds);
+        if (string.IsNullOrEmpty(ids)) return new Dictionary<string, TweetMetrics>();
+
+        var url = $"https://api.twitter.com/2/tweets?ids={ids}&tweet.fields=public_metrics,non_public_metrics";
+        
+        var message = new HttpRequestMessage(HttpMethod.Get, url);
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await _httpClient.SendAsync(message);
+        var content = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+             _logger.LogError("GetTweetMetrics failed: {Content}", content);
+             // Return empty or throw? Throw to retry later.
+             throw new Exception($"Metrics fetch failed: {response.StatusCode}");
+        }
+
+        var result = new Dictionary<string, TweetMetrics>();
+        
+        using var doc = System.Text.Json.JsonDocument.Parse(content);
+        if (doc.RootElement.TryGetProperty("data", out var dataArray))
+        {
+            foreach (var item in dataArray.EnumerateArray())
+            {
+                var id = item.GetProperty("id").GetString()!;
+                var metrics = new TweetMetrics();
+                
+                if (item.TryGetProperty("public_metrics", out var publicMetrics))
+                {
+                    metrics.LikeCount = publicMetrics.GetProperty("like_count").GetInt32();
+                    metrics.RetweetCount = publicMetrics.GetProperty("retweet_count").GetInt32();
+                    metrics.ReplyCount = publicMetrics.GetProperty("reply_count").GetInt32();
+                    // impression_count sometimes here or in non_public_metrics depending on plan
+                    if (publicMetrics.TryGetProperty("impression_count", out var imp))
+                        metrics.ImpressionCount = imp.GetInt32();
+                }
+                 
+                // If using OAuth 2.0 User Context, we might get non_public_metrics (impressions)
+                if (item.TryGetProperty("non_public_metrics", out var nonPublicMetrics))
+                {
+                    if (nonPublicMetrics.TryGetProperty("impression_count", out var imp))
+                        metrics.ImpressionCount = imp.GetInt32();
+                }
+
+                result[id] = metrics;
+            }
+        }
+        
+        return result;
+    }
+
     public async Task<string> PostTweetAsync(string accessToken, string content)
     {
         var request = new

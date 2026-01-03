@@ -36,22 +36,30 @@ public class AIGeneratorService : IAIGeneratorService
             return;
         }
 
-        // 1. Construct the System Prompt
-        var systemPrompt = BuildSystemPrompt(strategy);
+        // 1. Fetch Top Performing Posts (Feedback Loop)
+        var topPosts = await _context.Posts
+            .Where(p => p.UserId == userId && p.Status == PostStatus.Published)
+            .OrderByDescending(p => p.LikeCount)
+            .Take(5)
+            .Select(p => p.Content)
+            .ToListAsync();
 
-        // 2. User Prompt (Trigger)
+        // 2. Construct the System Prompt
+        var systemPrompt = BuildSystemPrompt(strategy, topPosts);
+
+        // 3. User Prompt (Trigger)
         var userPrompt = "Generate 3 unique content suggestions for today based on my strategy. Return ONLY JSON.";
 
         try
         {
-            // 3. Call AI
+            // 4. Call AI
             var responseText = await _aiProvider.GenerateTextAsync(userPrompt, systemPrompt);
             _logger.LogInformation("AI Response: {Response}", responseText);
 
-            // 4. Parse JSON Response
+            // 5. Parse JSON Response
             var suggestions = ParseAIResponse(responseText);
 
-            // 5. Save to Database
+            // 6. Save to Database
             foreach (var item in suggestions)
             {
                 var suggestion = new ContentSuggestion
@@ -75,10 +83,20 @@ public class AIGeneratorService : IAIGeneratorService
         }
     }
 
-    private string BuildSystemPrompt(UserStrategy strategy)
+    private string BuildSystemPrompt(UserStrategy strategy, List<string> topPosts)
     {
         var goalDesc = strategy.PrimaryGoal.ToString(); // e.g., Authority
         var toneDesc = strategy.Tone.ToString(); // e.g., Witty
+        
+        var historyContext = "";
+        if (topPosts.Any())
+        {
+            historyContext = "Here are some of the user's best performing past tweets. Use them as inspiration for style, format and topics, but do not copy them directly:\n";
+            foreach(var post in topPosts)
+            {
+                 historyContext += $"- \"{post}\"\n";
+            }
+        }
 
         return $@"
 You are an expert Social Media Content Strategist.
@@ -87,6 +105,8 @@ Your client is a Twitter/X user with the following profile:
 - Tone of Voice: {toneDesc}
 - Language: {strategy.Language}
 {(string.IsNullOrEmpty(strategy.ForbiddenTopics) ? "" : $"- Forbidden Topics: {strategy.ForbiddenTopics}")}
+
+{historyContext}
 
 Your task:
 Generate 3 high-quality tweet suggestions. The tweets must be strictly in the user's selected language ({strategy.Language}).

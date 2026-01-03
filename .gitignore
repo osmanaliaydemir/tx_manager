@@ -13,6 +13,7 @@ obj/
 *.suo
 *.user
 appsettings.Development.json
+appsettings.Production.json
 appsettings.local.json
 
 # Flutter / Dart

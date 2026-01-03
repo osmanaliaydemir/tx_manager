@@ -17,4 +17,11 @@ public class Post : BaseEntity
 
     public Guid UserId { get; set; }
     public User? User { get; set; }
+
+    // Analytics
+    public int LikeCount { get; set; }
+    public int RetweetCount { get; set; }
+    public int ReplyCount { get; set; }
+    public int ImpressionCount { get; set; }
+    public DateTime? LastMetricsUpdate { get; set; }
 }

@@ -16,6 +16,7 @@ public static class DependencyInjection
         // TypeAdapterConfig.GlobalSettings.Scan(Assembly.GetExecutingAssembly());
 
         services.AddTransient<IPostService, PostService>();
+        services.AddTransient<IAnalyticsService, AnalyticsService>();
         
         return services;
     }

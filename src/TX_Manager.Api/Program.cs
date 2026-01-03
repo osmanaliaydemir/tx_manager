@@ -54,6 +54,12 @@ app.UseHangfireDashboard("/hangfire");
         "publish-scheduled-posts",
         job => job.ExecuteAsync(),
         Cron.Minutely);
+
+    // Run every hour
+    recurringJobManager.AddOrUpdate<TX_Manager.Infrastructure.BackgroundJobs.AnalyticsJob>(
+        "update-post-analytics",
+        job => job.ExecuteAsync(),
+        Cron.Hourly);
 }
 
 app.Run();

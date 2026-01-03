@@ -17,4 +17,10 @@ public class PostDto
     public string Status { get; set; } = string.Empty;
     public string? XPostId { get; set; }
     public DateTime CreatedAt { get; set; }
+    
+    // Analytics
+    public int LikeCount { get; set; }
+    public int RetweetCount { get; set; }
+    public int ReplyCount { get; set; }
+    public int ImpressionCount { get; set; }
 }

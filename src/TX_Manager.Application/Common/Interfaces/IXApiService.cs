@@ -16,6 +16,18 @@ public interface IXApiService
     
     // Refresh Token
     Task<XAuthResult> RefreshTokenAsync(string refreshToken);
+
+    // Analytics
+    // Returns Dictionary<TweetId, TweetMetrics>
+    Task<Dictionary<string, TweetMetrics>> GetTweetMetricsAsync(string accessToken, IEnumerable<string> tweetIds);
+}
+
+public class TweetMetrics
+{
+    public int LikeCount { get; set; }
+    public int RetweetCount { get; set; }
+    public int ReplyCount { get; set; }
+    public int ImpressionCount { get; set; }
 }
 
 public class XUserProfile

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/presentation/home/home_screen.dart';
-import 'package:tx_manager_mobile/presentation/home/scheduled_posts_screen.dart';
+import 'package:tx_manager_mobile/presentation/home/posts_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -13,10 +13,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const ScheduledPostsScreen(),
-  ];
+  final List<Widget> _screens = [const HomeScreen(), const PostsScreen()];
 
   @override
   Widget build(BuildContext context) {
