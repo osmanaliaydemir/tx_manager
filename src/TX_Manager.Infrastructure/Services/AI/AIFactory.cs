@@ -18,6 +18,7 @@ public static class AIFactory
             "OpenAI" => serviceProvider.GetRequiredService<OpenAIProvider>(),
             "Gemini" => serviceProvider.GetRequiredService<GeminiProvider>(),
             "DeepSeek" => serviceProvider.GetRequiredService<DeepSeekProvider>(),
+            "Ollama" => serviceProvider.GetRequiredService<OllamaProvider>(),
             "Mock" => serviceProvider.GetRequiredService<MockAIProvider>(),
             _ => serviceProvider.GetRequiredService<MockAIProvider>()
         };

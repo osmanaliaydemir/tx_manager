@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddHttpClient<OpenAIProvider>();
         services.AddHttpClient<GeminiProvider>();
         services.AddHttpClient<DeepSeekProvider>();
+        services.AddHttpClient<OllamaProvider>();
         services.AddTransient<MockAIProvider>();
 
         services.AddTransient<ILanguageModelProvider>(sp => AIFactory.Create(sp));
