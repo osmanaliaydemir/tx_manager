@@ -11,7 +11,7 @@ public interface IXApiService
     Task<XAuthResult> ExchangeCodeForTokenAsync(string code, string state); 
     
     // Posting to X
-    Task<string> PostTweetAsync(string accessToken, string content);
+    Task<string> PostTweetAsync(string accessToken, string content, string? inReplyToTweetId = null);
     Task<XUserProfile> GetMyUserProfileAsync(string accessToken);
     
     // Refresh Token

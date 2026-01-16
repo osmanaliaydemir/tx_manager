@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tx_manager_mobile/core/router/app_router.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:tx_manager_mobile/l10n/app_localizations.dart';
+import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
 
 import 'dart:io';
 
-void main() {
-  HttpOverrides.global = MyHttpOverrides();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // SECURITY: never bypass TLS certificate validation in release builds.
+  if (!kReleaseMode) {
+    HttpOverrides.global = MyHttpOverrides();
+  }
+  await NotificationService.I.init();
   runApp(const ProviderScope(child: TXManagerApp()));
 }
 

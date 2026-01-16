@@ -1,7 +1,10 @@
 using Hangfire;
 using Serilog;
+using TX_Manager.Api.Hangfire;
+using TX_Manager.Api.Observability;
 using TX_Manager.Api.Middleware;
 using TX_Manager.Application;
+using TX_Manager.Application.Common.Observability;
 using TX_Manager.Application.Services;
 using TX_Manager.Infrastructure;
 
@@ -23,6 +26,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<IJobRunStore, InMemoryJobRunStore>();
 
 var app = builder.Build();
 
@@ -42,7 +46,10 @@ app.UseAuthorization();
 app.MapControllers();
 
 // 4. Hangfire Dashboard
-app.UseHangfireDashboard("/hangfire");
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireDashboardAuthFilter(app.Configuration) }
+});
 
 // 5. Schedule Recurring Jobs
 {

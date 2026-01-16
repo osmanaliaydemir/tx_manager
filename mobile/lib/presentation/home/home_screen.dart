@@ -1,14 +1,14 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
-import 'package:tx_manager_mobile/data/repositories/suggestion_repository.dart';
-import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
-import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
-import 'package:dio/dio.dart';
+import 'package:tx_manager_mobile/data/local/tweet_templates_storage.dart';
+import 'package:tx_manager_mobile/data/models/tweet_template_model.dart';
+import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
 import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
+import 'package:tx_manager_mobile/presentation/home/scheduled_posts_controller.dart';
+import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
-import 'package:tx_manager_mobile/presentation/home/posts_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -17,81 +17,275 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen>
-    with SingleTickerProviderStateMixin {
-  final PageController _pageController = PageController(viewportFraction: 0.85);
-  late AnimationController _animController;
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final TextEditingController _textController = TextEditingController();
+  static const int _maxTweetLength = 280;
+  static const int _warnThreshold = 260;
 
-  List<ContentSuggestion> _suggestions = [];
-  bool _isLoading = true;
-  UserProfile? _user;
+  bool _isThreadMode = false;
+  final List<TextEditingController> _threadControllers = [
+    TextEditingController(),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat(reverse: true);
-    _loadData();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    final user = await ref.read(userRepositoryProvider).getMyProfile();
-    if (mounted) setState(() => _user = user);
-  }
+  DateTime? _scheduledDate;
+  TimeOfDay? _scheduledTime;
+  bool _isLoading = false;
+  String? _editingPostId; // Draft/edit mode
 
   @override
   void dispose() {
-    _animController.dispose();
-    _pageController.dispose();
+    _textController.dispose();
+    for (final c in _threadControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    if (!mounted) return;
+  Future<void> _selectDate() async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _scheduledDate ?? now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+
+    if (pickedDate != null && mounted) {
+      setState(() {
+        _scheduledDate = pickedDate;
+        _scheduledTime ??= const TimeOfDay(hour: 10, minute: 0);
+      });
+    }
+  }
+
+  Future<void> _selectTime() async {
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _scheduledTime ?? const TimeOfDay(hour: 10, minute: 0),
+    );
+
+    if (pickedTime != null && mounted) {
+      setState(() => _scheduledTime = pickedTime);
+    }
+  }
+
+  Future<void> _createPost() async {
+    final trimmed = _textController.text.trim();
+
+    // Thread mode: create multiple posts as a reply-chain (server handles publishing order)
+    final threadContents = _isThreadMode
+        ? _threadControllers
+              .map((c) => c.text.trim())
+              .where((t) => t.isNotEmpty)
+              .toList()
+        : const <String>[];
+
+    if (_isThreadMode) {
+      if (threadContents.length < 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thread için en az 2 tweet gerekir.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+      if (threadContents.any((t) => t.length > _maxTweetLength)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thread içindeki her tweet 280 karakteri geçemez.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+    } else {
+      if (trimmed.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lütfen tweet içeriği girin')),
+        );
+        return;
+      }
+
+      if (trimmed.length > _maxTweetLength) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tweet 280 karakteri geçemez.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+    }
+
+    if (!_isThreadMode && trimmed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lütfen tweet içeriği girin')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      var items = await ref.read(suggestionRepositoryProvider).getSuggestions();
+      DateTime? scheduledFor;
+      if (_scheduledDate != null && _scheduledTime != null) {
+        scheduledFor = DateTime(
+          _scheduledDate!.year,
+          _scheduledDate!.month,
+          _scheduledDate!.day,
+          _scheduledTime!.hour,
+          _scheduledTime!.minute,
+        );
+      }
 
-      if (items.isEmpty) {
-        try {
-          await ref.read(suggestionRepositoryProvider).triggerGeneration();
-          await Future.delayed(const Duration(seconds: 4));
-        } catch (e) {
-          debugPrint("Generation trigger failed: $e");
-          rethrow; // Let the outer catch handle it
+      if (scheduledFor != null) {
+        final minAllowed = DateTime.now().add(const Duration(minutes: 1));
+        if (scheduledFor.isBefore(minAllowed)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Planlama zamanı geçmiş olamaz (en az 1 dk sonrası).',
+                ),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          return;
         }
-        items = await ref.read(suggestionRepositoryProvider).getSuggestions();
+      }
+
+      // Health-check: Planlama yapılıyorsa token durumunu kontrol et
+      if (scheduledFor != null) {
+        final status = await ref.read(userRepositoryProvider).getAuthStatus();
+        if (status == null || status.requiresLogin) {
+          if (mounted) {
+            final proceed = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF252A34),
+                title: const Text(
+                  'Giriş gerekli',
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: const Text(
+                  'Tweet planlamak için X hesabına tekrar giriş yapmalısın. Şimdi giriş yapmak ister misin?',
+                  style: TextStyle(color: Colors.grey),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('İptal'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Giriş Yap'),
+                  ),
+                ],
+              ),
+            );
+
+            if (proceed == true && mounted) {
+              context.push('/auth_webview');
+            }
+          }
+          return;
+        }
+      }
+
+      if (_isThreadMode) {
+        // Optimistic UI: add a local scheduled entry for the head tweet (first content)
+        String? localId;
+        if (scheduledFor != null) {
+          localId = await ref
+              .read(scheduledPostsProvider.notifier)
+              .optimisticAdd(
+                content: threadContents.first,
+                scheduledForLocal: scheduledFor,
+              );
+        }
+
+        await ref
+            .read(postRepositoryProvider)
+            .createThread(contents: threadContents, scheduledFor: scheduledFor);
+
+        if (localId != null) {
+          await ref
+              .read(scheduledPostsProvider.notifier)
+              .removeOptimistic(localId);
+          // Refresh to pull server truth
+          await ref.read(scheduledPostsProvider.notifier).refresh();
+        }
+      } else if (_editingPostId != null) {
+        await ref
+            .read(postRepositoryProvider)
+            .updatePost(_editingPostId!, trimmed, scheduledFor);
+      } else {
+        // Optimistic UI for scheduled posts
+        String? localId;
+        if (scheduledFor != null) {
+          localId = await ref
+              .read(scheduledPostsProvider.notifier)
+              .optimisticAdd(content: trimmed, scheduledForLocal: scheduledFor);
+        }
+
+        await ref
+            .read(postRepositoryProvider)
+            .createPost(content: trimmed, scheduledFor: scheduledFor);
+
+        if (localId != null) {
+          await ref
+              .read(scheduledPostsProvider.notifier)
+              .removeOptimistic(localId);
+          await ref.read(scheduledPostsProvider.notifier).refresh();
+        }
       }
 
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isThreadMode
+                  ? (scheduledFor != null
+                        ? 'Thread başarıyla planlandı!'
+                        : 'Thread taslak olarak kaydedildi!')
+                  : (scheduledFor != null
+                        ? (_editingPostId != null
+                              ? 'Tweet yeniden planlandı!'
+                              : 'Tweet başarıyla planlandı!')
+                        : (_editingPostId != null
+                              ? 'Taslak güncellendi!'
+                              : 'Tweet taslak olarak kaydedildi!')),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Formu temizle
+        _textController.clear();
         setState(() {
-          _suggestions = items;
+          _scheduledDate = null;
+          _scheduledTime = null;
+          _editingPostId = null;
+          if (_isThreadMode) {
+            for (final c in _threadControllers) {
+              c.clear();
+            }
+            // keep at least one controller
+            while (_threadControllers.length > 1) {
+              _threadControllers.removeLast().dispose();
+            }
+          }
         });
       }
     } catch (e) {
-      if (e is DioException && e.response?.data != null) {
-        try {
-          // Dio might parse JSON automatically to Map
-          final data = e.response?.data;
-          if (data is Map<String, dynamic>) {
-            final detailed = data['Detailed']?.toString() ?? "";
-            if (detailed.contains("strategy")) {
-              if (mounted) context.go('/onboarding');
-              return;
-            }
-          }
-        } catch (_) {}
-      }
-      debugPrint("Error loading data: $e");
-      // Optionally show a snackbar here
+      // If optimistic item exists, keep it only if the user is offline; otherwise it would be misleading.
+      // For simplicity we don't remove here (controller merge keeps local-only items); user can refresh.
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Veri yüklenemedi: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
+        );
       }
     } finally {
       if (mounted) {
@@ -102,497 +296,959 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final dateFormat = DateFormat('dd MMM yyyy');
+    final tzOffset = DateTime.now().timeZoneOffset;
+    final tzOffsetText =
+        'UTC${tzOffset.isNegative ? '-' : '+'}${tzOffset.abs().inHours.toString().padLeft(2, '0')}:${(tzOffset.abs().inMinutes % 60).toString().padLeft(2, '0')}';
+    final tzName = DateTime.now().timeZoneName;
+
     return Scaffold(
-      body: Stack(
-        children: [
-          // Animated Background
-          AnimatedBuilder(
-            animation: _animController,
-            builder: (context, child) {
-              return Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color.lerp(
-                        Colors.black,
-                        Color(0xFF1A1A2E),
-                        _animController.value,
-                      )!,
-                      Color.lerp(
-                        Color(0xFF0F0F1A),
-                        Colors.black,
-                        _animController.value,
-                      )!,
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Blur Mesh (Optional, keeping simple for perf)
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(
-                  child: _isLoading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppTheme.primaryColor,
-                          ),
-                        )
-                      : _suggestions.isEmpty
-                      ? _buildEmptyState()
-                      : _buildSuggestionList(),
-                ),
-                // _buildBottomBar() // Moved to overlay or removed if swipe is enough
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ... (build method same)
-
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Günün Stratejisi",
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _user != null
-                    ? "Merhaba, ${_user!.name}"
-                    : "Senin için seçilenler",
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-          GestureDetector(
-            onTap: _showProfileMenu,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: AppTheme.premiumGradient,
-              ),
-              child: CircleAvatar(
-                backgroundColor: Colors.black,
-                radius: 20,
-                backgroundImage:
-                    _user != null && _user!.profileImageUrl.isNotEmpty
-                    ? NetworkImage(_user!.profileImageUrl)
-                    : null,
-                child: _user == null || _user!.profileImageUrl.isEmpty
-                    ? const Icon(Icons.person, color: Colors.white)
-                    : null,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showProfileMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A2E),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
         child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              if (_user != null) ...[
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: _user!.profileImageUrl.isNotEmpty
-                      ? NetworkImage(_user!.profileImageUrl)
-                      : null,
-                  child: _user!.profileImageUrl.isEmpty
-                      ? const Icon(Icons.person, size: 40)
-                      : null,
-                ),
-                const SizedBox(height: 16),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Text(
-                  _user!.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
+                  'Yeni Tweet',
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  "@${_user!.username}",
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 14,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 32),
-              ],
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.redAccent),
-                title: const Text(
-                  "Çıkış Yap",
-                  style: TextStyle(color: Colors.redAccent),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DraftPicker(
+                        isEditing: _editingPostId != null,
+                        onPick: (post) {
+                          final id = post['id']?.toString();
+                          if (id == null || id.isEmpty) return;
+
+                          final content = (post['content'] ?? '').toString();
+                          final localDt = DateTime.tryParse(
+                            (post['scheduledFor'] ?? post['createdAt'] ?? '')
+                                .toString(),
+                          )?.toLocal();
+
+                          setState(() {
+                            _editingPostId = id;
+                            _textController.text = content;
+                            // Drafts typically have no scheduledFor; keep schedule empty unless present
+                            if (post['scheduledFor'] != null &&
+                                localDt != null) {
+                              _scheduledDate = DateTime(
+                                localDt.year,
+                                localDt.month,
+                                localDt.day,
+                              );
+                              _scheduledTime = TimeOfDay.fromDateTime(localDt);
+                            } else {
+                              _scheduledDate = null;
+                              _scheduledTime = null;
+                            }
+                          });
+
+                          FocusScope.of(context).requestFocus(FocusNode());
+                        },
+                        onClearEdit: () {
+                          setState(() {
+                            _editingPostId = null;
+                            _scheduledDate = null;
+                            _scheduledTime = null;
+                          });
+                          _textController.clear();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _TemplatePicker(
+                        getCurrentText: () => _textController.text.trim(),
+                        onApply: (content) {
+                          if (content.trim().isEmpty) return;
+                          setState(() {
+                            _editingPostId = null;
+                            _scheduledDate = null;
+                            _scheduledTime = null;
+                            if (_isThreadMode) {
+                              _threadControllers.first.text = content;
+                            } else {
+                              _textController.text = content;
+                            }
+                          });
+                          FocusScope.of(context).requestFocus(FocusNode());
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                onTap: () async {
-                  Navigator.pop(sheetContext); // Close sheet using sheetContext
-                  await ref.read(userRepositoryProvider).logout();
-                  if (mounted) context.go('/login'); // Use HomeScreen context
-                },
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.auto_awesome_outlined,
-            size: 80,
-            color: AppTheme.primaryColor.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            "Analiz Ediliyor...",
-            style: TextStyle(fontSize: 18, color: Colors.white70),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "Yapay zeka içerik üretiyor",
-            style: TextStyle(color: Colors.white30),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSuggestionList() {
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: _suggestions.length,
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 24),
-          child: _buildCard(_suggestions[index]),
-        );
-      },
-    );
-  }
-
-  Future<void> _handleReject(ContentSuggestion suggestion) async {
-    try {
-      await ref
-          .read(suggestionRepositoryProvider)
-          .rejectSuggestion(suggestion.id);
-      _removeItem(suggestion.id);
-    } catch (e) {
-      debugPrint("Reject failed: $e");
-    }
-  }
-
-  void _removeItem(String id) {
-    setState(() {
-      _suggestions.removeWhere((s) => s.id == id);
-    });
-  }
-
-  Future<void> _handleSchedule(ContentSuggestion suggestion) async {
-    final now = DateTime.now();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
-
-    if (pickedDate == null) return;
-    if (!mounted) return;
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 10, minute: 0),
-    );
-
-    if (pickedTime == null) return;
-
-    final scheduledDateTime = DateTime(
-      pickedDate.year,
-      pickedDate.month,
-      pickedDate.day,
-      pickedTime.hour,
-      pickedTime.minute,
-    );
-
-    // Processing...
-
-    try {
-      await ref
-          .read(suggestionRepositoryProvider)
-          .acceptSuggestion(suggestion.id, scheduledFor: scheduledDateTime);
-
-      // Refresh scheduled posts
-      ref.invalidate(postsProvider('1'));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Planlandı: ${pickedDate.day}.${pickedDate.month} - ${pickedTime.format(context)}",
-            ),
-          ),
-        );
-      }
-
-      _removeItem(suggestion.id);
-    } catch (e) {
-      // Revert if needed
-      debugPrint("Schedule failed: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Hata oluştu: $e")));
-      }
-    }
-  }
-
-  Widget _buildCard(ContentSuggestion suggestion) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF252A34).withValues(alpha: 0.8),
-                const Color(0xFF121212).withValues(alpha: 0.95),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-              width: 1.5,
-            ),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: -50,
-                right: -50,
-                child: Container(
-                  width: 150,
-                  height: 150,
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                        blurRadius: 50,
-                        spreadRadius: 20,
+                    color: AppTheme.surfaceColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.glassBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.format_list_bulleted,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Thread modu',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: _isThreadMode,
+                        onChanged: (v) {
+                          setState(() {
+                            _isThreadMode = v;
+                            _editingPostId =
+                                null; // thread & draft-edit don't mix for now
+                            _scheduledDate = null;
+                            _scheduledTime = null;
+                            _textController.clear();
+                            for (final c in _threadControllers) {
+                              c.clear();
+                            }
+                            while (_threadControllers.length > 1) {
+                              _threadControllers.removeLast().dispose();
+                            }
+                          });
+                        },
                       ),
                     ],
                   ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.glassBorder),
+                  ),
+                  child: _isThreadMode
+                      ? Column(
+                          children: [
+                            for (int i = 0; i < _threadControllers.length; i++)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  left: 12,
+                                  right: 12,
+                                  top: i == 0 ? 12 : 8,
+                                  bottom: 8,
+                                ),
+                                child: _ThreadTweetField(
+                                  index: i,
+                                  controller: _threadControllers[i],
+                                  maxLen: _maxTweetLength,
+                                  warnThreshold: _warnThreshold,
+                                  onRemove: _threadControllers.length > 1
+                                      ? () {
+                                          setState(() {
+                                            final c = _threadControllers
+                                                .removeAt(i);
+                                            c.dispose();
+                                          });
+                                        }
+                                      : null,
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _threadControllers.add(
+                                        TextEditingController(),
+                                      );
+                                    });
+                                  },
+                                  icon: const Icon(
+                                    Icons.add,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text('Tweet ekle'),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
+                                    ),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : TextField(
+                          controller: _textController,
+                          maxLines: 8,
+                          maxLength: _maxTweetLength,
+                          maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(_maxTweetLength),
+                          ],
+                          buildCounter:
+                              (
+                                context, {
+                                required int currentLength,
+                                required bool isFocused,
+                                required int? maxLength,
+                              }) {
+                                final max = maxLength ?? _maxTweetLength;
+                                final remaining = max - currentLength;
 
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildPill("AI Önerisi", AppTheme.accentColor),
-                        _buildPill(
-                          suggestion.riskAssessment,
-                          _getRiskColor(suggestion.riskAssessment),
-                          outlined: true,
+                                Color color = Colors.grey[600]!;
+                                if (currentLength >= _warnThreshold &&
+                                    currentLength < max) {
+                                  color = Colors.orangeAccent;
+                                } else if (currentLength >= max) {
+                                  color = Colors.redAccent;
+                                }
+
+                                final text = remaining <= 20
+                                    ? '$currentLength/$max (kalan: $remaining)'
+                                    : '$currentLength/$max';
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 12,
+                                    bottom: 10,
+                                  ),
+                                  child: Text(
+                                    text,
+                                    style: TextStyle(
+                                      color: color,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                );
+                              },
+                          textInputAction: TextInputAction.done,
+                          onEditingComplete: () =>
+                              FocusManager.instance.primaryFocus?.unfocus(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Tweet içeriğinizi yazın...',
+                            hintStyle: TextStyle(color: Colors.grey[600]),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
                         ),
-                      ],
-                    ),
-                    const Spacer(flex: 2),
-                    Text(
-                      suggestion.suggestedText,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                        fontFamily: "Inter",
-                      ),
-                    ),
-                    const Spacer(flex: 3),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.05),
-                        ),
-                      ),
-                      child: Row(
+                ),
+                const SizedBox(height: 24),
+                // Schedule Options
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.glassBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         children: [
                           Icon(
-                            Icons.insights,
-                            color: Colors.blueGrey[200],
+                            Icons.schedule,
+                            color: AppTheme.primaryColor,
                             size: 20,
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              suggestion.rationale,
-                              style: TextStyle(
-                                color: Colors.blueGrey[100],
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Planlama (Opsiyonel)',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Action Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _handleReject(suggestion),
-                            icon: const Icon(
-                              Icons.close,
-                              color: Colors.redAccent,
-                            ),
-                            label: const Text(
-                              "Reddet",
-                              style: TextStyle(color: Colors.redAccent),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              side: BorderSide(
-                                color: Colors.redAccent.withValues(alpha: 0.5),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Saat dilimi: $tzName ($tzOffsetText)',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _selectDate,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.1),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.calendar_today,
+                                      color: AppTheme.primaryColor,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      _scheduledDate != null
+                                          ? dateFormat.format(_scheduledDate!)
+                                          : 'Tarih seç',
+                                      style: TextStyle(
+                                        color: _scheduledDate != null
+                                            ? Colors.white
+                                            : Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _handleSchedule(suggestion),
-                            icon: const Icon(
-                              Icons.calendar_today,
-                              color: Colors.white,
-                            ),
-                            label: const Text(
-                              "Planla",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: _selectTime,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.1),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.access_time,
+                                      color: AppTheme.primaryColor,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      _scheduledTime != null
+                                          ? _scheduledTime!.format(context)
+                                          : 'Saat seç',
+                                      style: TextStyle(
+                                        color: _scheduledTime != null
+                                            ? Colors.white
+                                            : Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryColor,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              elevation: 8,
-                              shadowColor: AppTheme.primaryColor.withValues(
-                                alpha: 0.4,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
+                          ),
+                        ],
+                      ),
+                      if (_scheduledDate != null || _scheduledTime != null) ...[
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _scheduledDate = null;
+                              _scheduledTime = null;
+                            });
+                          },
+                          icon: const Icon(Icons.close, size: 16),
+                          label: const Text('Planlamayı kaldır'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
                           ),
                         ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 32),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _textController,
+                  builder: (context, value, _) {
+                    final text = value.text.trim();
+                    final canSubmitSingle =
+                        !_isLoading &&
+                        text.isNotEmpty &&
+                        text.length <= _maxTweetLength;
+                    final canSubmitThread =
+                        !_isLoading &&
+                        _threadControllers
+                                .map((c) => c.text.trim())
+                                .where((t) => t.isNotEmpty)
+                                .length >=
+                            2 &&
+                        _threadControllers
+                            .map((c) => c.text.trim())
+                            .where((t) => t.isNotEmpty)
+                            .every((t) => t.length <= _maxTweetLength);
 
-              // Bottom Actions Overlay
-            ],
+                    final canSubmit = _isThreadMode
+                        ? canSubmitThread
+                        : canSubmitSingle;
+
+                    return ElevatedButton(
+                      onPressed: canSubmit ? _createPost : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        disabledBackgroundColor: AppTheme.primaryColor
+                            .withValues(alpha: 0.35),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : Text(
+                              _isThreadMode
+                                  ? (_scheduledDate != null &&
+                                            _scheduledTime != null
+                                        ? 'Thread\'i Planla'
+                                        : 'Thread Taslağı Kaydet')
+                                  : (_scheduledDate != null &&
+                                            _scheduledTime != null
+                                        ? (_editingPostId != null
+                                              ? 'Yeniden Planla'
+                                              : 'Tweet\'i Planla')
+                                        : (_editingPostId != null
+                                              ? 'Taslağı Güncelle'
+                                              : 'Taslak Olarak Kaydet')),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildPill(String text, Color color, {bool outlined = false}) {
+class _ThreadTweetField extends StatelessWidget {
+  final int index;
+  final TextEditingController controller;
+  final int maxLen;
+  final int warnThreshold;
+  final VoidCallback? onRemove;
+
+  const _ThreadTweetField({
+    required this.index,
+    required this.controller,
+    required this.maxLen,
+    required this.warnThreshold,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: outlined ? Colors.transparent : color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: color.withValues(alpha: outlined ? 0.5 : 0)),
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Row(
+              children: [
+                Text(
+                  'Tweet #${index + 1}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                if (onRemove != null)
+                  IconButton(
+                    tooltip: 'Kaldır',
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.close, color: Colors.redAccent),
+                  ),
+              ],
+            ),
+          ),
+          TextField(
+            controller: controller,
+            maxLines: 5,
+            maxLength: maxLen,
+            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+            inputFormatters: [LengthLimitingTextInputFormatter(maxLen)],
+            buildCounter:
+                (
+                  context, {
+                  required int currentLength,
+                  required bool isFocused,
+                  required int? maxLength,
+                }) {
+                  final max = maxLength ?? maxLen;
+                  final remaining = max - currentLength;
+                  Color color = Colors.grey[600]!;
+                  if (currentLength >= warnThreshold && currentLength < max) {
+                    color = Colors.orangeAccent;
+                  } else if (currentLength >= max) {
+                    color = Colors.redAccent;
+                  }
+                  final text = remaining <= 20
+                      ? '$currentLength/$max (kalan: $remaining)'
+                      : '$currentLength/$max';
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 12, bottom: 10),
+                    child: Text(
+                      text,
+                      style: TextStyle(color: color, fontSize: 12),
+                    ),
+                  );
+                },
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Thread parçası...',
+              hintStyle: TextStyle(color: Colors.grey[600]),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftPicker extends ConsumerWidget {
+  final void Function(Map<String, dynamic> post) onPick;
+  final VoidCallback onClearEdit;
+  final bool isEditing;
+
+  const _DraftPicker({
+    required this.onPick,
+    required this.onClearEdit,
+    required this.isEditing,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              await showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF252A34),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (_) => const _DraftsBottomSheet(),
+              ).then((value) {
+                if (value is Map<String, dynamic>) {
+                  onPick(value);
+                }
+              });
+            },
+            icon: const Icon(Icons.notes, color: Colors.white),
+            label: const Text('Taslaklardan seç'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        if (isEditing) ...[
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Düzenlemeyi bırak',
+            onPressed: onClearEdit,
+            icon: const Icon(Icons.close, color: Colors.redAccent),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _DraftsBottomSheet extends ConsumerWidget {
+  const _DraftsBottomSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final draftsAsync = ref.watch(_draftsProvider);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Taslaklar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Yenile',
+                  onPressed: () => ref.invalidate(_draftsProvider),
+                  icon: const Icon(Icons.refresh, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            draftsAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              ),
+              error: (e, st) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Hata: $e',
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+              data: (drafts) {
+                if (drafts.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Taslak bulunamadı.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  );
+                }
+
+                // Keep it short; bottom sheet height will expand if needed.
+                return Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: drafts.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(color: Colors.white10),
+                    itemBuilder: (context, i) {
+                      final post = Map<String, dynamic>.from(drafts[i] as Map);
+                      final content = (post['content'] ?? '').toString();
+                      final createdAt = DateTime.tryParse(
+                        (post['createdAt'] ?? '').toString(),
+                      )?.toLocal();
+                      final createdText = createdAt != null
+                          ? DateFormat('dd MMM HH:mm').format(createdAt)
+                          : '';
+
+                      return ListTile(
+                        onTap: () => Navigator.pop(context, post),
+                        title: Text(
+                          content.isEmpty ? '(Boş taslak)' : content,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: createdText.isEmpty
+                            ? null
+                            : Text(
+                                createdText,
+                                style: const TextStyle(color: Colors.white54),
+                              ),
+                        trailing: const Icon(
+                          Icons.chevron_right,
+                          color: Colors.white54,
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Color _getRiskColor(String risk) {
-    if (risk.toLowerCase() == 'high') return Colors.redAccent;
-    if (risk.toLowerCase() == 'medium') return Colors.orangeAccent;
-    return const Color(0xFF00C853);
+final _draftsProvider = FutureProvider<List<dynamic>>((ref) async {
+  // PostStatus.Draft = 0
+  return ref.read(postRepositoryProvider).getPosts(status: '0');
+});
+
+final _templatesStorageProvider = Provider<TweetTemplatesStorage>((ref) {
+  return TweetTemplatesStorage();
+});
+
+final _templatesProvider = FutureProvider<List<TweetTemplateModel>>((
+  ref,
+) async {
+  return ref.read(_templatesStorageProvider).loadTemplates();
+});
+
+class _TemplatePicker extends ConsumerWidget {
+  final String Function() getCurrentText;
+  final void Function(String content) onApply;
+
+  const _TemplatePicker({required this.getCurrentText, required this.onApply});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        await showModalBottomSheet(
+          context: context,
+          backgroundColor: const Color(0xFF252A34),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => _TemplatesBottomSheet(currentText: getCurrentText()),
+        ).then((value) {
+          if (value is String) onApply(value);
+        });
+      },
+      icon: const Icon(Icons.bookmark_outline, color: Colors.white),
+      label: const Text('Şablonlar'),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+}
+
+class _TemplatesBottomSheet extends ConsumerWidget {
+  final String currentText;
+
+  const _TemplatesBottomSheet({required this.currentText});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final templatesAsync = ref.watch(_templatesProvider);
+
+    Future<void> createTemplate() async {
+      final text = currentText.trim();
+      if (text.isEmpty) return;
+
+      final controller = TextEditingController();
+      final title = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF252A34),
+          title: const Text(
+            'Şablon kaydet',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              hintText: 'Şablon adı',
+              hintStyle: TextStyle(color: Colors.white54),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('İptal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Kaydet'),
+            ),
+          ],
+        ),
+      );
+
+      if (title == null || title.trim().isEmpty) return;
+
+      final template = TweetTemplateModel(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        title: title.trim(),
+        content: text,
+        createdAt: DateTime.now(),
+      );
+
+      await ref.read(_templatesStorageProvider).addTemplate(template);
+      ref.invalidate(_templatesProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Şablon kaydedildi'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Şablonlar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Yenile',
+                  onPressed: () => ref.invalidate(_templatesProvider),
+                  icon: const Icon(Icons.refresh, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (currentText.trim().isNotEmpty) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: createTemplate,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text('Bu tweet’i şablon olarak kaydet'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            templatesAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              ),
+              error: (e, st) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Hata: $e',
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+              data: (templates) {
+                if (templates.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Şablon bulunamadı.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  );
+                }
+
+                return Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: templates.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(color: Colors.white10),
+                    itemBuilder: (context, i) {
+                      final t = templates[i];
+                      return ListTile(
+                        onTap: () => Navigator.pop(context, t.content),
+                        title: Text(
+                          t.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          t.content,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white54),
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Sil',
+                          icon: const Icon(
+                            Icons.delete,
+                            color: Colors.redAccent,
+                          ),
+                          onPressed: () async {
+                            await ref
+                                .read(_templatesStorageProvider)
+                                .deleteTemplate(t.id);
+                            ref.invalidate(_templatesProvider);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

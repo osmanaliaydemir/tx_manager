@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
+import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
+import 'package:tx_manager_mobile/data/local/notified_posts_storage.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
+import 'package:tx_manager_mobile/presentation/home/scheduled_posts_controller.dart';
+import 'dart:async';
 
 final postsProvider = FutureProvider.family<List<dynamic>, String>((
   ref,
@@ -11,18 +15,129 @@ final postsProvider = FutureProvider.family<List<dynamic>, String>((
   return ref.read(postRepositoryProvider).getPosts(status: status);
 });
 
-class PostsScreen extends ConsumerWidget {
+class PostsScreen extends ConsumerStatefulWidget {
   const PostsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PostsScreen> createState() => _PostsScreenState();
+}
+
+class _PostsScreenState extends ConsumerState<PostsScreen>
+    with WidgetsBindingObserver {
+  Timer? _refreshTimer;
+  final NotifiedPostsStorage _notified = NotifiedPostsStorage();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startAutoRefresh();
+
+    // Notify on newly seen Published/Failed posts (persisted to avoid duplicates).
+    ref.listen<AsyncValue<List<dynamic>>>(postsProvider('2'), (
+      prev,
+      next,
+    ) async {
+      await _notifyIfNew(next, type: 'published');
+    });
+    ref.listen<AsyncValue<List<dynamic>>>(postsProvider('3'), (
+      prev,
+      next,
+    ) async {
+      await _notifyIfNew(next, type: 'failed');
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startAutoRefresh(immediate: true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+  }
+
+  void _startAutoRefresh({bool immediate = false}) {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+
+    if (immediate) {
+      _refreshAllLists();
+    }
+
+    // Hangfire 1 dakikada bir çalışıyor; 20-30sn polling yeterli.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      _refreshAllLists();
+    });
+  }
+
+  void _refreshAllLists() {
+    ref.invalidate(scheduledPostsProvider); // Scheduled (cached/offline)
+    ref.invalidate(postsProvider('2')); // Published
+    ref.invalidate(postsProvider('3')); // Failed
+  }
+
+  Future<void> _notifyIfNew(
+    AsyncValue<List<dynamic>> async, {
+    required String type,
+  }) async {
+    final posts = async.maybeWhen(data: (v) => v, orElse: () => null);
+    if (posts == null || posts.isEmpty) return;
+
+    for (final p in posts) {
+      if (p is! Map) continue;
+      final post = Map<String, dynamic>.from(p);
+      final id = post['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+
+      final key = '$type:$id';
+      if (await _notified.has(key)) continue;
+
+      final content = (post['content'] ?? '').toString();
+      if (type == 'published') {
+        await NotificationService.I.notifyPublished(
+          postId: id,
+          content: content,
+        );
+      } else if (type == 'failed') {
+        final failureCode = post['failureCode']?.toString();
+        await NotificationService.I.notifyFailed(
+          postId: id,
+          content: content,
+          failureCode: failureCode,
+        );
+      }
+
+      await _notified.add(key);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
           title: const Text("Gönderiler"),
           backgroundColor: Colors.transparent,
+          actions: [
+            IconButton(
+              tooltip: 'Yenile',
+              onPressed: _refreshAllLists,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
           bottom: const TabBar(
             indicatorColor: AppTheme.primaryColor,
             labelColor: AppTheme.primaryColor,
@@ -30,6 +145,7 @@ class PostsScreen extends ConsumerWidget {
             tabs: [
               Tab(text: "Zamanlananlar"),
               Tab(text: "Yayınlananlar"),
+              Tab(text: "Başarısız"),
             ],
           ),
         ),
@@ -37,6 +153,7 @@ class PostsScreen extends ConsumerWidget {
           children: [
             PostList(status: '1'), // Scheduled
             PostList(status: '2'), // Published
+            PostList(status: '3'), // Failed
           ],
         ),
       ),
@@ -50,7 +167,9 @@ class PostList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final postsAsync = ref.watch(postsProvider(status));
+    final postsAsync = status == '1'
+        ? ref.watch(scheduledPostsProvider)
+        : ref.watch(postsProvider(status));
 
     return postsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -58,14 +177,24 @@ class PostList extends ConsumerWidget {
       data: (posts) {
         if (posts.isEmpty) return _buildEmptyState();
 
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: posts.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, status: status);
+        return RefreshIndicator(
+          color: AppTheme.primaryColor,
+          onRefresh: () async {
+            if (status == '1') {
+              ref.invalidate(scheduledPostsProvider);
+            } else {
+              ref.invalidate(postsProvider(status));
+            }
           },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: posts.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              return PostCard(post: post, status: status);
+            },
+          ),
         );
       },
     );
@@ -103,6 +232,38 @@ class PostCard extends ConsumerStatefulWidget {
 }
 
 class _PostCardState extends ConsumerState<PostCard> {
+  Future<void> _retryNow(dynamic post) async {
+    try {
+      final now = DateTime.now();
+      final scheduledFor = now.add(const Duration(minutes: 2));
+      await ref
+          .read(postRepositoryProvider)
+          .updatePost(post['id'], post['content'] ?? '', scheduledFor);
+
+      ref.invalidate(postsProvider('1'));
+      ref.invalidate(postsProvider('2'));
+      ref.invalidate(postsProvider('3'));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Yeniden deneme planlandı (2 dk sonra).'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Retry başarısız: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
@@ -111,6 +272,9 @@ class _PostCardState extends ConsumerState<PostCard> {
     final date = DateTime.tryParse(dateStr)?.toLocal() ?? DateTime.now();
     final formatter = DateFormat('dd MMM HH:mm');
     final isPublished = widget.status == '2';
+    final isFailed = widget.status == '3';
+    final failureReason = post['failureReason']?.toString();
+    final failureCode = post['failureCode']?.toString();
 
     // Analytics
     final likes = post['likeCount'] ?? 0;
@@ -133,15 +297,27 @@ class _PostCardState extends ConsumerState<PostCard> {
               Row(
                 children: [
                   Icon(
-                    isPublished ? Icons.check_circle : Icons.schedule,
+                    isPublished
+                        ? Icons.check_circle
+                        : isFailed
+                        ? Icons.error
+                        : Icons.schedule,
                     size: 16,
-                    color: isPublished ? Colors.green : AppTheme.primaryColor,
+                    color: isPublished
+                        ? Colors.green
+                        : isFailed
+                        ? Colors.redAccent
+                        : AppTheme.primaryColor,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     formatter.format(date),
                     style: TextStyle(
-                      color: isPublished ? Colors.green : AppTheme.primaryColor,
+                      color: isPublished
+                          ? Colors.green
+                          : isFailed
+                          ? Colors.redAccent
+                          : AppTheme.primaryColor,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -155,19 +331,51 @@ class _PostCardState extends ConsumerState<PostCard> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: (isPublished ? Colors.green : Colors.orange)
-                          .withValues(alpha: 0.2),
+                      color:
+                          (isPublished
+                                  ? Colors.green
+                                  : isFailed
+                                  ? Colors.redAccent
+                                  : Colors.orange)
+                              .withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      isPublished ? "YAYINLANDI" : "BEKLIYOR",
+                      isPublished
+                          ? "YAYINLANDI"
+                          : isFailed
+                          ? "BAŞARISIZ"
+                          : "BEKLIYOR",
                       style: TextStyle(
-                        color: isPublished ? Colors.green : Colors.orange,
+                        color: isPublished
+                            ? Colors.green
+                            : isFailed
+                            ? Colors.redAccent
+                            : Colors.orange,
                         fontSize: 10,
                       ),
                     ),
                   ),
                   if (!isPublished) ...[
+                    if (isFailed) ...[
+                      InkWell(
+                        onTap: () => _retryNow(post),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.refresh,
+                            size: 18,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     const SizedBox(width: 12),
                     InkWell(
                       onTap: () => _showEditDialog(post),
@@ -216,6 +424,47 @@ class _PostCardState extends ConsumerState<PostCard> {
               height: 1.4,
             ),
           ),
+          if (isFailed &&
+              ((failureCode != null && failureCode.isNotEmpty) ||
+                  (failureReason != null && failureReason.isNotEmpty))) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Colors.redAccent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      [
+                        if (failureCode != null && failureCode.isNotEmpty)
+                          failureCode,
+                        if (failureReason != null && failureReason.isNotEmpty)
+                          failureReason,
+                      ].join(': '),
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (isPublished) ...[
             const SizedBox(height: 16),
             const Divider(color: Colors.white10),

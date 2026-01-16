@@ -110,4 +110,68 @@ public class AuthController : ControllerBase
             user.ProfileImageUrl
         });
     }
+
+    [HttpGet("status/{userId}")]
+    public async Task<IActionResult> GetAuthStatus(Guid userId)
+    {
+        var tokenEntity = await _context.AuthTokens.FirstOrDefaultAsync(t => t.UserId == userId);
+        if (tokenEntity == null)
+        {
+            return Ok(new
+            {
+                HasToken = false,
+                ExpiresAtUtc = (DateTime?)null,
+                IsExpired = true,
+                CanRefresh = false,
+                RequiresLogin = true
+            });
+        }
+
+        var now = DateTime.UtcNow;
+        bool isExpired = tokenEntity.ExpiresAt <= now;
+
+        bool canRefresh = false;
+        if (!string.IsNullOrWhiteSpace(tokenEntity.EncryptedRefreshToken))
+        {
+            try
+            {
+                // If decrypt works and refresh token is non-empty we assume refresh is possible
+                var refreshToken = _encryption.Decrypt(tokenEntity.EncryptedRefreshToken);
+                canRefresh = !string.IsNullOrWhiteSpace(refreshToken);
+            }
+            catch
+            {
+                canRefresh = false;
+            }
+        }
+
+        return Ok(new
+        {
+            HasToken = true,
+            ExpiresAtUtc = tokenEntity.ExpiresAt,
+            IsExpired = isExpired,
+            CanRefresh = canRefresh,
+            RequiresLogin = isExpired && !canRefresh
+        });
+    }
+
+    public class UpdateTimezoneRequest
+    {
+        public string? TimeZoneName { get; set; }
+        public int? TimeZoneOffsetMinutes { get; set; }
+    }
+
+    [HttpPost("timezone/{userId}")]
+    public async Task<IActionResult> UpdateTimezone(Guid userId, [FromBody] UpdateTimezoneRequest request)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        user.TimeZoneName = request.TimeZoneName;
+        user.TimeZoneOffsetMinutes = request.TimeZoneOffsetMinutes;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return Ok(new { Message = "Timezone updated." });
+    }
 }

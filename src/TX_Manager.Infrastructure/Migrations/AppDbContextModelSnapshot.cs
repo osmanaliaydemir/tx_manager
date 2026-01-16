@@ -157,6 +157,9 @@ namespace TX_Manager.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("FailureCode")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("FailureReason")
                         .HasColumnType("nvarchar(max)");
 
@@ -169,6 +172,12 @@ namespace TX_Manager.Infrastructure.Migrations
                     b.Property<int>("LikeCount")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("PublishLockId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("PublishLockedUntilUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("ReplyCount")
                         .HasColumnType("int");
 
@@ -179,6 +188,12 @@ namespace TX_Manager.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ThreadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ThreadIndex")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -213,6 +228,12 @@ namespace TX_Manager.Infrastructure.Migrations
                     b.Property<string>("ProfileImageUrl")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TimeZoneName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TimeZoneOffsetMinutes")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");

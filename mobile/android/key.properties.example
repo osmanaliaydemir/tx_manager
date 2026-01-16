@@ -1,0 +1,7 @@
+# Bu dosyayı kopyalayıp `key.properties` olarak kaydedin ve gerçek değerleri girin
+# key.properties dosyasını .gitignore'a eklediğinizden emin olun!
+
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=upload
+storeFile=/path/to/your/upload-keystore.jks

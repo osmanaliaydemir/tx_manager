@@ -26,11 +26,32 @@ public class PostsController : ControllerBase
         return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
     }
 
+    [HttpPost("thread")]
+    public async Task<IActionResult> CreateThread([FromBody] CreateThreadDto dto)
+    {
+        var results = await _postService.CreateThreadAsync(dto);
+        return Ok(results);
+    }
+
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] Guid userId, [FromQuery] PostStatus? status)
     {
         var posts = await _postService.GetPostsAsync(userId, status);
         return Ok(posts);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        try
+        {
+            var post = await _postService.GetPostByIdAsync(id);
+            return Ok(post);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
     }
 
     public class UpdatePostRequest
@@ -60,5 +81,17 @@ public class PostsController : ControllerBase
             return NoContent();
         } 
         catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost("{id}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id)
+    {
+        try
+        {
+            await _postService.CancelScheduleAsync(id);
+            return Ok();
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException e) { return BadRequest(e.Message); }
     }
 }

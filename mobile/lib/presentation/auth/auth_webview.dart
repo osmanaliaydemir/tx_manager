@@ -3,15 +3,17 @@ import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:tx_manager_mobile/core/constants/api_constants.dart';
+import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class AuthWebView extends StatefulWidget {
+class AuthWebView extends ConsumerStatefulWidget {
   const AuthWebView({super.key});
 
   @override
-  State<AuthWebView> createState() => _AuthWebViewState();
+  ConsumerState<AuthWebView> createState() => _AuthWebViewState();
 }
 
-class _AuthWebViewState extends State<AuthWebView> {
+class _AuthWebViewState extends ConsumerState<AuthWebView> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
@@ -56,6 +58,14 @@ class _AuthWebViewState extends State<AuthWebView> {
   Future<void> _handleSuccess(String userId, bool hasStrategy) async {
     const storage = FlutterSecureStorage();
     await storage.write(key: 'auth_token', value: userId);
+
+    // Best-effort: store client timezone on backend for future calendar/UX
+    final tzName = DateTime.now().timeZoneName;
+    final tzOffsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
+    await ref.read(userRepositoryProvider).updateTimezone(
+          timeZoneName: tzName,
+          timeZoneOffsetMinutes: tzOffsetMinutes,
+        );
 
     if (mounted) {
       if (hasStrategy) {

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using TX_Manager.Application.Common.Exceptions;
 using TX_Manager.Application.Common.Interfaces;
 using TX_Manager.Application.Common.Models;
 
@@ -200,12 +201,27 @@ public class XApiService : IXApiService
         return result;
     }
 
-    public async Task<string> PostTweetAsync(string accessToken, string content)
+    public async Task<string> PostTweetAsync(string accessToken, string content, string? inReplyToTweetId = null)
     {
-        var request = new
+        object request;
+        if (!string.IsNullOrWhiteSpace(inReplyToTweetId))
         {
-            text = content
-        };
+            request = new
+            {
+                text = content,
+                reply = new
+                {
+                    in_reply_to_tweet_id = inReplyToTweetId
+                }
+            };
+        }
+        else
+        {
+            request = new
+            {
+                text = content
+            };
+        }
 
         var message = new HttpRequestMessage(HttpMethod.Post, "https://api.twitter.com/2/tweets");
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -216,7 +232,10 @@ public class XApiService : IXApiService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new Exception($"Tweet failed: {resContent}");
+            throw new XApiException(
+                message: "Tweet failed",
+                statusCode: response.StatusCode,
+                responseBody: resContent);
         }
 
         // Parse ID

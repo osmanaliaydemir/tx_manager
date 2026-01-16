@@ -1,11 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Mapster;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Net;
+using TX_Manager.Application.Common.Exceptions;
 using TX_Manager.Application.Common.Interfaces;
+using TX_Manager.Application.Common.Models;
+using TX_Manager.Application.Common.Time;
 using TX_Manager.Application.DTOs;
 using TX_Manager.Domain.Entities;
 using TX_Manager.Domain.Enums;
@@ -42,12 +47,78 @@ public class PostService : IPostService
         if (dto.Content.Contains("badword")) throw new InvalidOperationException("Content policy violation.");
 
         var post = dto.Adapt<Post>();
-        post.Status = dto.ScheduledFor.HasValue ? PostStatus.Scheduled : PostStatus.Draft;
+        if (dto.ScheduledFor.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            if (dto.ScheduledFor.Value.Kind == DateTimeKind.Unspecified)
+            {
+                // Legacy clients might send local time without Z; use stored offset if available.
+                var offsetMinutes = await _context.Users
+                    .Where(u => u.Id == dto.UserId)
+                    .Select(u => u.TimeZoneOffsetMinutes)
+                    .FirstOrDefaultAsync();
+
+                post.ScheduledFor = SchedulingTime.NormalizeToUtc(dto.ScheduledFor.Value, now, offsetMinutes);
+            }
+            else
+            {
+                post.ScheduledFor = SchedulingTime.NormalizeToUtc(dto.ScheduledFor.Value, now);
+            }
+            post.Status = PostStatus.Scheduled;
+        }
+        else
+        {
+            post.Status = PostStatus.Draft;
+        }
 
         _context.Posts.Add(post);
         await _context.SaveChangesAsync();
 
         return post.Adapt<PostDto>();
+    }
+
+    public async Task<IEnumerable<PostDto>> CreateThreadAsync(CreateThreadDto dto)
+    {
+        if (dto.Contents == null || dto.Contents.Count == 0)
+            throw new ArgumentException("Thread contents cannot be empty.");
+
+        var threadId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        DateTime? normalizedScheduledFor = null;
+        if (dto.ScheduledFor.HasValue)
+        {
+            if (dto.ScheduledFor.Value.Kind == DateTimeKind.Unspecified)
+            {
+                var offsetMinutes = await _context.Users
+                    .Where(u => u.Id == dto.UserId)
+                    .Select(u => u.TimeZoneOffsetMinutes)
+                    .FirstOrDefaultAsync();
+
+                normalizedScheduledFor = SchedulingTime.NormalizeToUtc(dto.ScheduledFor.Value, now, offsetMinutes);
+            }
+            else
+            {
+                normalizedScheduledFor = SchedulingTime.NormalizeToUtc(dto.ScheduledFor.Value, now);
+            }
+        }
+
+        var posts = dto.Contents
+            .Select((content, idx) => new Post
+            {
+                UserId = dto.UserId,
+                Content = content,
+                ThreadId = threadId,
+                ThreadIndex = idx,
+                ScheduledFor = normalizedScheduledFor,
+                Status = normalizedScheduledFor.HasValue ? PostStatus.Scheduled : PostStatus.Draft
+            })
+            .ToList();
+
+        _context.Posts.AddRange(posts);
+        await _context.SaveChangesAsync();
+
+        return posts.Adapt<IEnumerable<PostDto>>();
     }
 
     public async Task<IEnumerable<PostDto>> GetPostsAsync(Guid userId, PostStatus? status = null)
@@ -68,6 +139,13 @@ public class PostService : IPostService
         return posts.Adapt<IEnumerable<PostDto>>();
     }
 
+    public async Task<PostDto> GetPostByIdAsync(Guid id)
+    {
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) throw new KeyNotFoundException("Post not found.");
+        return post.Adapt<PostDto>();
+    }
+
     public async Task<PostDto> UpdatePostAsync(Guid id, string content, DateTime? scheduledFor)
     {
         var post = await _context.Posts.FindAsync(id);
@@ -78,8 +156,25 @@ public class PostService : IPostService
         post.Content = content;
         if (scheduledFor.HasValue)
         {
-            post.ScheduledFor = scheduledFor.Value;
+            var now = DateTime.UtcNow;
+            if (scheduledFor.Value.Kind == DateTimeKind.Unspecified)
+            {
+                var offsetMinutes = await _context.Users
+                    .Where(u => u.Id == post.UserId)
+                    .Select(u => u.TimeZoneOffsetMinutes)
+                    .FirstOrDefaultAsync();
+
+                post.ScheduledFor = SchedulingTime.NormalizeToUtc(scheduledFor.Value, now, offsetMinutes);
+            }
+            else
+            {
+                post.ScheduledFor = SchedulingTime.NormalizeToUtc(scheduledFor.Value, now);
+            }
             post.Status = PostStatus.Scheduled;
+            // Retry semantics: If a post was previously failed, rescheduling should clear failure info
+            post.FailureReason = null;
+            post.FailureCode = null;
+            post.XPostId = null;
         }
         // If content changed but no date provided, keep as is? Or if User cleared date? 
         // For simplicity, we assume editing a scheduled post keeps it scheduled unless date is removed.
@@ -114,81 +209,253 @@ public class PostService : IPostService
         await _context.SaveChangesAsync();
     }
 
-    public async Task PublishScheduledPostsAsync()
+    public async Task CancelScheduleAsync(Guid id)
+    {
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) throw new KeyNotFoundException("Post not found.");
+        if (post.Status == PostStatus.Published) throw new InvalidOperationException("Cannot cancel published posts.");
+
+        post.ScheduledFor = null;
+        post.Status = PostStatus.Draft;
+        post.FailureReason = null;
+        post.FailureCode = null;
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<PublishRunResult> PublishScheduledPostsAsync()
     {
         _logger.LogInformation("Checking for scheduled posts...");
-        
-        var duePosts = await _context.Posts
+
+        var nowUtc = DateTime.UtcNow;
+        var lockUntil = nowUtc.AddMinutes(5);
+        var startedAt = nowUtc;
+        var sw = Stopwatch.StartNew();
+        var result = new PublishRunResult
+        {
+            StartedAtUtc = startedAt,
+        };
+
+        // Only publish "head" posts:
+        // - non-thread posts (ThreadId == null)
+        // - thread head (ThreadIndex == 0)
+        // This avoids partial thread publishes and enables per-thread locking.
+        var dueHeads = await _context.Posts
             .Include(p => p.User)
             .ThenInclude(u => u.AuthToken)
-            .Where(p => p.Status == PostStatus.Scheduled && p.ScheduledFor <= DateTime.UtcNow)
+            .Where(p => p.Status == PostStatus.Scheduled
+                        && p.ScheduledFor != null
+                        && p.ScheduledFor <= nowUtc
+                        && (p.ThreadId == null || p.ThreadIndex == 0))
             .ToListAsync();
 
-        foreach (var post in duePosts)
+        result.HeadsDue = dueHeads.Count;
+
+        foreach (var head in dueHeads)
         {
-            try
+            // Try to claim this head row atomically; if we can't, another worker is handling it.
+            var lockId = Guid.NewGuid();
+            var claimed = await TryClaimPublishHeadAsync(head.Id, nowUtc, lockUntil, lockId);
+            if (!claimed)
             {
-                if (post.User?.AuthToken == null)
+                result.SkippedLocked++;
+                continue;
+            }
+
+            result.HeadsClaimed++;
+
+            var ordered = await LoadPublishGroupAsync(head, nowUtc);
+            if (ordered.Count == 0) continue;
+
+            var first = ordered.First();
+
+            if (first.User?.AuthToken == null)
+            {
+                foreach (var p in ordered)
                 {
-                    post.Status = PostStatus.Failed;
-                    post.FailureReason = "No auth token found";
+                    p.Status = PostStatus.Failed;
+                    p.FailureCode = "TOKEN_MISSING";
+                    p.FailureReason = "No auth token found";
+                    p.PublishLockId = null;
+                    p.PublishLockedUntilUtc = null;
+                }
+                continue;
+            }
+
+            var authToken = first.User.AuthToken;
+            var accessToken = _encryption.Decrypt(authToken.EncryptedAccessToken);
+
+            // Check Token Expiration (refresh if < 5 mins remaining)
+            if (authToken.ExpiresAt <= DateTime.UtcNow.AddMinutes(5))
+            {
+                try
+                {
+                    var refreshToken = _encryption.Decrypt(authToken.EncryptedRefreshToken);
+                    if (string.IsNullOrWhiteSpace(refreshToken))
+                    {
+                        foreach (var p in ordered)
+                        {
+                            p.Status = PostStatus.Failed;
+                            p.FailureCode = "TOKEN_REFRESH_MISSING";
+                            p.FailureReason = "Refresh token missing";
+                            p.PublishLockId = null;
+                            p.PublishLockedUntilUtc = null;
+                        }
+                        continue;
+                    }
+
+                    var newTokens = await _xApi.RefreshTokenAsync(refreshToken);
+
+                    // Update DB
+                    authToken.EncryptedAccessToken = _encryption.Encrypt(newTokens.AccessToken);
+                    if (!string.IsNullOrEmpty(newTokens.RefreshToken))
+                    {
+                        authToken.EncryptedRefreshToken = _encryption.Encrypt(newTokens.RefreshToken);
+                    }
+                    authToken.ExpiresAt = DateTime.UtcNow.AddSeconds(newTokens.ExpiresIn);
+
+                    // Use new access token
+                    accessToken = newTokens.AccessToken;
+
+                    _logger.LogInformation("Token refreshed for user {UserId}", first.UserId);
+                }
+                catch (Exception refreshEx)
+                {
+                    _logger.LogError(refreshEx, "Failed to refresh token for user {UserId}", first.UserId);
+                    foreach (var p in ordered)
+                    {
+                        p.Status = PostStatus.Failed;
+                        p.FailureCode = "TOKEN_REFRESH_FAILED";
+                        p.FailureReason = "Token expired and refresh failed";
+                        p.PublishLockId = null;
+                        p.PublishLockedUntilUtc = null;
+                    }
                     continue;
                 }
-
-                var authToken = post.User.AuthToken;
-                var accessToken = _encryption.Decrypt(authToken.EncryptedAccessToken);
-
-                // Check Token Expiration (refresh if < 5 mins remaining)
-                if (authToken.ExpiresAt <= DateTime.UtcNow.AddMinutes(5))
-                {
-                    try 
-                    {
-                        var refreshToken = _encryption.Decrypt(authToken.EncryptedRefreshToken);
-                        var newTokens = await _xApi.RefreshTokenAsync(refreshToken);
-
-                        // Update DB
-                        authToken.EncryptedAccessToken = _encryption.Encrypt(newTokens.AccessToken);
-                        if (!string.IsNullOrEmpty(newTokens.RefreshToken))
-                        {
-                            authToken.EncryptedRefreshToken = _encryption.Encrypt(newTokens.RefreshToken);
-                        }
-                        authToken.ExpiresAt = DateTime.UtcNow.AddSeconds(newTokens.ExpiresIn);
-                        
-                        // Use new access token
-                        accessToken = newTokens.AccessToken;
-                        
-                        _logger.LogInformation("Token refreshed for user {UserId}", post.UserId);
-                    }
-                    catch (Exception refreshEx)
-                    {
-                         _logger.LogError(refreshEx, "Failed to refresh token for user {UserId}", post.UserId);
-                         post.Status = PostStatus.Failed;
-                         post.FailureReason = "Token expired and refresh failed";
-                         continue;
-                    }
-                }
-
-                var xId = await _xApi.PostTweetAsync(accessToken, post.Content);
-                
-                post.Status = PostStatus.Published;
-                post.XPostId = xId;
-                post.ScheduledFor = null; // Keep scheduled time for history? Actually clearing it might be misleading. Let's keep it.
-                // Revert requirement: removing 'post.ScheduledFor = null;' line effectively.
-                // Or better, let's just not touch ScheduledFor.
-                 
-                _logger.LogInformation("Successfully published post {PostId} to X ({XPostId})", post.Id, xId);
             }
-            catch (Exception ex)
+
+            string? previousXId = null;
+            for (var i = 0; i < ordered.Count; i++)
             {
-                _logger.LogError(ex, "Failed to publish post {Id}", post.Id);
-                post.Status = PostStatus.Failed;
-                post.FailureReason = ex.Message;
+                var post = ordered[i];
+                result.PostsAttempted++;
+                try
+                {
+                    using var scope = _logger.BeginScope(new Dictionary<string, object?>
+                    {
+                        ["PublishAttemptId"] = lockId,
+                        ["UserId"] = post.UserId,
+                        ["PostId"] = post.Id,
+                        ["ThreadId"] = post.ThreadId,
+                        ["ThreadIndex"] = post.ThreadIndex,
+                    });
+
+                    var xId = await _xApi.PostTweetAsync(accessToken, post.Content, previousXId);
+
+                    post.Status = PostStatus.Published;
+                    post.XPostId = xId;
+                    post.FailureReason = null;
+                    post.FailureCode = null;
+                    post.PublishLockId = null;
+                    post.PublishLockedUntilUtc = null;
+                    previousXId = xId;
+                    result.PostsPublished++;
+
+                    _logger.LogInformation("Successfully published post {PostId} to X ({XPostId})", post.Id, xId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to publish post {Id}", post.Id);
+                    post.Status = PostStatus.Failed;
+                    (post.FailureCode, post.FailureReason) = MapFailure(ex);
+                    post.PublishLockId = null;
+                    post.PublishLockedUntilUtc = null;
+                    result.PostsFailed++;
+
+                    // Abort rest of thread if any.
+                    for (var j = i + 1; j < ordered.Count; j++)
+                    {
+                        ordered[j].Status = PostStatus.Failed;
+                        ordered[j].FailureCode = "THREAD_ABORTED";
+                        ordered[j].FailureReason = "Thread aborted: previous tweet failed";
+                        ordered[j].PublishLockId = null;
+                        ordered[j].PublishLockedUntilUtc = null;
+                        result.PostsFailed++;
+                    }
+                    break;
+                }
             }
         }
         
-        if (duePosts.Any())
+        if (dueHeads.Any())
         {
             await _context.SaveChangesAsync();
         }
+
+        sw.Stop();
+        result.FinishedAtUtc = startedAt.AddMilliseconds(sw.Elapsed.TotalMilliseconds);
+
+        _logger.LogInformation(
+            "Publish run finished. HeadsDue={HeadsDue}, HeadsClaimed={HeadsClaimed}, PostsAttempted={PostsAttempted}, Published={Published}, Failed={Failed}, SkippedLocked={SkippedLocked}, DurationMs={DurationMs}",
+            result.HeadsDue,
+            result.HeadsClaimed,
+            result.PostsAttempted,
+            result.PostsPublished,
+            result.PostsFailed,
+            result.SkippedLocked,
+            sw.ElapsedMilliseconds);
+
+        return result;
+    }
+
+    private async Task<List<Post>> LoadPublishGroupAsync(Post head, DateTime nowUtc)
+    {
+        if (head.ThreadId == null)
+        {
+            // Non-thread single post
+            return new List<Post> { head };
+        }
+
+        // Load full thread for this head, ensuring it's still due+scheduled
+        return await _context.Posts
+            .Where(p => p.ThreadId == head.ThreadId
+                        && p.Status == PostStatus.Scheduled
+                        && p.ScheduledFor != null
+                        && p.ScheduledFor <= nowUtc)
+            .OrderBy(p => p.ThreadIndex ?? 0)
+            .ThenBy(p => p.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task<bool> TryClaimPublishHeadAsync(Guid headId, DateTime nowUtc, DateTime lockUntilUtc, Guid lockId)
+    {
+        // SQL Server: atomically claim by setting a lock only if not currently locked.
+        // IMPORTANT: This protects against multiple Hangfire servers / overlapping workers.
+        var rows = await _context.Posts
+            .Where(p => p.Id == headId
+                        && p.Status == PostStatus.Scheduled
+                        && p.ScheduledFor != null
+                        && p.ScheduledFor <= nowUtc
+                        && (p.PublishLockedUntilUtc == null || p.PublishLockedUntilUtc < nowUtc))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(p => p.PublishLockId, lockId)
+                .SetProperty(p => p.PublishLockedUntilUtc, lockUntilUtc));
+
+        return rows == 1;
+    }
+
+    private static (string code, string message) MapFailure(Exception ex)
+    {
+        // Prefer explicit X API classification
+        if (ex is XApiException x)
+        {
+            if (x.StatusCode == HttpStatusCode.TooManyRequests) return ("RATE_LIMIT", "Rate limit exceeded");
+            if (x.StatusCode == HttpStatusCode.Unauthorized) return ("UNAUTHORIZED", "Unauthorized");
+            if (x.StatusCode == HttpStatusCode.Forbidden) return ("FORBIDDEN", "Forbidden");
+            return ("X_API_ERROR", "X API error");
+        }
+
+        // Fallback
+        return ("UNKNOWN", ex.Message);
     }
 }
