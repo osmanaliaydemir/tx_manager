@@ -13,6 +13,7 @@ public interface IApplicationDbContext
     DbSet<AnalyticsData> AnalyticsData { get; }
     DbSet<UserStrategy> UserStrategies { get; }
     DbSet<ContentSuggestion> ContentSuggestions { get; }
+    DbSet<DeviceToken> DeviceTokens { get; }
     
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

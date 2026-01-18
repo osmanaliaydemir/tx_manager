@@ -6,6 +6,7 @@ import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:tx_manager_mobile/l10n/app_localizations.dart';
 import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
+import 'package:tx_manager_mobile/core/notifications/push_registration_service.dart';
 
 import 'dart:io';
 
@@ -16,6 +17,8 @@ Future<void> main() async {
     HttpOverrides.global = MyHttpOverrides();
   }
   await NotificationService.I.init();
+  // Best-effort: registers FCM token if Firebase is configured.
+  await PushRegistrationService.I.initAndRegisterBestEffort();
   runApp(const ProviderScope(child: TXManagerApp()));
 }
 

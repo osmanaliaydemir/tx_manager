@@ -12,7 +12,8 @@ class StrategyRepository {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   Future<void> saveStrategy(UserStrategy strategy) async {
-    final userId = await _storage.read(key: 'auth_token');
+    final token = await _storage.read(key: 'auth_token');
+    if (token == null || token.isEmpty) throw Exception('User not authenticated');
 
     // Convert Enums to Indexes or Strings matching Backend
     // Backend expects Int for Enum (0,1,2..) usually if default JSON serialization
@@ -25,8 +26,9 @@ class StrategyRepository {
 
     try {
       await _dio.post(
-        '${ApiConstants.baseUrl}/api/strategy/$userId',
+        '${ApiConstants.baseUrl}/api/strategy',
         data: data,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
     } catch (e) {
       throw Exception("Failed to save strategy: $e");

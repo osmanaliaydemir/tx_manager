@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
+import 'package:tx_manager_mobile/core/offline/outbox.dart';
+import 'package:tx_manager_mobile/core/offline/outbox_executor.dart';
+import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
 import 'package:tx_manager_mobile/data/local/notified_posts_storage.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
+import 'package:tx_manager_mobile/data/repositories/suggestion_repository.dart';
 import 'package:tx_manager_mobile/presentation/home/scheduled_posts_controller.dart';
 import 'dart:async';
 
@@ -82,6 +86,19 @@ class _PostsScreenState extends ConsumerState<PostsScreen>
   }
 
   void _refreshAllLists() {
+    // Flush offline actions first (best-effort), then refresh server truth.
+    ref
+        .read(outboxProcessorProvider)
+        .flushBestEffort(
+          execute: (action) async {
+            final exec = OutboxExecutor(
+              posts: ref.read(postRepositoryProvider),
+              suggestions: ref.read(suggestionRepositoryProvider),
+            );
+            await exec.execute(action);
+          },
+        );
+
     ref.invalidate(scheduledPostsProvider); // Scheduled (cached/offline)
     ref.invalidate(postsProvider('2')); // Published
     ref.invalidate(postsProvider('3')); // Failed
@@ -256,8 +273,12 @@ class _PostCardState extends ConsumerState<PostCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Retry başarısız: $e'),
-            backgroundColor: Colors.redAccent,
+            content: Text(
+              e is QueuedOfflineException ? e.message : 'Retry başarısız: $e',
+            ),
+            backgroundColor: e is QueuedOfflineException
+                ? Colors.orange
+                : Colors.redAccent,
           ),
         );
       }
@@ -267,12 +288,14 @@ class _PostCardState extends ConsumerState<PostCard> {
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
+    final id = post['id']?.toString() ?? '';
     final content = post['content'] ?? '';
     final dateStr = post['scheduledFor'] ?? post['createdAt'];
     final date = DateTime.tryParse(dateStr)?.toLocal() ?? DateTime.now();
     final formatter = DateFormat('dd MMM HH:mm');
     final isPublished = widget.status == '2';
     final isFailed = widget.status == '3';
+    final isQueued = (post['isQueued'] == true) || id.startsWith('local-');
     final failureReason = post['failureReason']?.toString();
     final failureCode = post['failureCode']?.toString();
 
@@ -356,6 +379,30 @@ class _PostCardState extends ConsumerState<PostCard> {
                       ),
                     ),
                   ),
+                  if (isQueued) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Text(
+                        "KUYRUKTA",
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                   if (!isPublished) ...[
                     if (isFailed) ...[
                       InkWell(

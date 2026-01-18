@@ -13,15 +13,18 @@ public class AIGeneratorService : IAIGeneratorService
 {
     private readonly IApplicationDbContext _context;
     private readonly ILanguageModelProvider _aiProvider;
+    private readonly IPushNotificationService _push;
     private readonly ILogger<AIGeneratorService> _logger;
 
     public AIGeneratorService(
         IApplicationDbContext context,
         ILanguageModelProvider aiProvider,
+        IPushNotificationService push,
         ILogger<AIGeneratorService> logger)
     {
         _context = context;
         _aiProvider = aiProvider;
+        _push = push;
         _logger = logger;
     }
 
@@ -67,6 +70,7 @@ public class AIGeneratorService : IAIGeneratorService
             
             var existingSet = new HashSet<string>(existingTexts, StringComparer.OrdinalIgnoreCase);
 
+            var inserted = 0;
             foreach (var item in suggestions)
             {
                 if (existingSet.Contains(item.Text))
@@ -84,9 +88,23 @@ public class AIGeneratorService : IAIGeneratorService
                     Status = SuggestionStatus.Pending
                 };
                 _context.ContentSuggestions.Add(suggestion);
+                inserted++;
             }
 
             await _context.SaveChangesAsync();
+
+            // Best-effort push
+            if (inserted > 0)
+            {
+                try
+                {
+                    await _push.NotifySuggestionsReadyAsync(userId, inserted);
+                }
+                catch (Exception pex)
+                {
+                    _logger.LogWarning(pex, "Push notify (suggestions_ready) failed for user {UserId}", userId);
+                }
+            }
         }
         catch (Exception ex)
         {

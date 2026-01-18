@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TX_Manager.Api.Auth;
 using TX_Manager.Application.DTOs;
 using TX_Manager.Application.Services;
 
@@ -10,6 +12,7 @@ namespace TX_Manager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class PostsController : ControllerBase
 {
     private readonly IPostService _postService;
@@ -22,6 +25,7 @@ public class PostsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreatePostDto dto)
     {
+        dto.UserId = User.GetUserId();
         var result = await _postService.CreatePostAsync(dto);
         return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
     }
@@ -29,13 +33,15 @@ public class PostsController : ControllerBase
     [HttpPost("thread")]
     public async Task<IActionResult> CreateThread([FromBody] CreateThreadDto dto)
     {
+        dto.UserId = User.GetUserId();
         var results = await _postService.CreateThreadAsync(dto);
         return Ok(results);
     }
 
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] Guid userId, [FromQuery] PostStatus? status)
+    public async Task<IActionResult> Get([FromQuery] PostStatus? status)
     {
+        var userId = User.GetUserId();
         var posts = await _postService.GetPostsAsync(userId, status);
         return Ok(posts);
     }
@@ -45,7 +51,7 @@ public class PostsController : ControllerBase
     {
         try
         {
-            var post = await _postService.GetPostByIdAsync(id);
+            var post = await _postService.GetPostByIdAsync(User.GetUserId(), id);
             return Ok(post);
         }
         catch (KeyNotFoundException)
@@ -65,7 +71,7 @@ public class PostsController : ControllerBase
     {
         try 
         {
-             var result = await _postService.UpdatePostAsync(id, request.Content, request.ScheduledFor);
+             var result = await _postService.UpdatePostAsync(User.GetUserId(), id, request.Content, request.ScheduledFor);
              return Ok(result);
         } 
         catch (KeyNotFoundException) { return NotFound(); }
@@ -77,7 +83,7 @@ public class PostsController : ControllerBase
     {
         try 
         {
-            await _postService.DeletePostAsync(id);
+            await _postService.DeletePostAsync(User.GetUserId(), id);
             return NoContent();
         } 
         catch (KeyNotFoundException) { return NotFound(); }
@@ -88,7 +94,7 @@ public class PostsController : ControllerBase
     {
         try
         {
-            await _postService.CancelScheduleAsync(id);
+            await _postService.CancelScheduleAsync(User.GetUserId(), id);
             return Ok();
         }
         catch (KeyNotFoundException) { return NotFound(); }

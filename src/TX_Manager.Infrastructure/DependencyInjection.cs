@@ -6,6 +6,7 @@ using TX_Manager.Infrastructure.Persistence;
 using TX_Manager.Infrastructure.Services;
 using TX_Manager.Infrastructure.Services.AI;
 using TX_Manager.Infrastructure.Services.AI.Providers;
+using TX_Manager.Infrastructure.Services.Push;
 using Hangfire;
 using Hangfire.SqlServer;
 using System;
@@ -57,6 +58,11 @@ public static class DependencyInjection
 
         services.AddTransient<ILanguageModelProvider>(sp => AIFactory.Create(sp));
         services.AddTransient<IAIGeneratorService, AIGeneratorService>();
+
+        // Push notifications (FCM optional; logs if not configured)
+        services.Configure<PushOptions>(configuration.GetSection("Push"));
+        services.AddHttpClient();
+        services.AddTransient<IPushNotificationService, PushNotificationService>();
 
         return services;
     }

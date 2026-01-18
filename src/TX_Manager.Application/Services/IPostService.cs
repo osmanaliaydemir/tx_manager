@@ -13,9 +13,9 @@ public interface IPostService
     Task<PostDto> CreatePostAsync(CreatePostDto dto);
     Task<IEnumerable<PostDto>> CreateThreadAsync(CreateThreadDto dto);
     Task<IEnumerable<PostDto>> GetPostsAsync(Guid userId, PostStatus? status = null);
-    Task<PostDto> GetPostByIdAsync(Guid id);
-    Task<PostDto> UpdatePostAsync(Guid id, string content, DateTime? scheduledFor);
-    Task CancelScheduleAsync(Guid id);
-    Task DeletePostAsync(Guid id);
+    Task<PostDto> GetPostByIdAsync(Guid userId, Guid id);
+    Task<PostDto> UpdatePostAsync(Guid userId, Guid id, string content, DateTime? scheduledFor);
+    Task CancelScheduleAsync(Guid userId, Guid id);
+    Task DeletePostAsync(Guid userId, Guid id);
     Task<PublishRunResult> PublishScheduledPostsAsync(); // Logic for worker
 }

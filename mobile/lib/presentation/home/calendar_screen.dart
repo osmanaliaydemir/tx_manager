@@ -5,12 +5,15 @@ import 'package:tx_manager_mobile/core/theme/app_theme.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
 import 'package:tx_manager_mobile/presentation/home/posts_screen.dart';
 import 'package:tx_manager_mobile/presentation/home/scheduled_posts_controller.dart';
+import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
 
 enum _CalendarViewMode { month, week, day }
 
 enum _DropAction { keepTime, pickTime, cancel }
 
 enum _EditResult { save, delete, cancel }
+
+enum _PostsTab { scheduled, published, failed }
 
 class _CalendarEvent {
   final Map<String, dynamic> post;
@@ -57,8 +60,21 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     1,
   );
   _CalendarViewMode _viewMode = _CalendarViewMode.month;
+  _PostsTab _postsTab = _PostsTab.scheduled;
   static const int _dayStartHour = 6;
   static const int _dayEndHourInclusive = 23;
+  static const Duration _minFuture = Duration(minutes: 1);
+
+  bool _isPastDay(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(day.year, day.month, day.day);
+    return d.isBefore(today);
+  }
+
+  bool _isPastForScheduling(DateTime localDateTime) {
+    return localDateTime.isBefore(DateTime.now().add(_minFuture));
+  }
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
@@ -80,6 +96,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     Map<String, dynamic> post,
     DateTime day,
   ) async {
+    // Block moving items to past dates directly from calendar.
+    if (_isPastDay(day)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Geçmiş tarihe planlama yapılamaz.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
     final existingLocal = _extractLocalDateTime(post);
     final originalTime = existingLocal != null
         ? TimeOfDay.fromDateTime(existingLocal)
@@ -162,6 +191,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       finalTime.minute,
     );
 
+    // Extra UX guard: block past time before hitting the API.
+    if (_isPastForScheduling(newDateTime)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Geçmiş saat seçilemez (en az 1 dk sonrası).'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
     await _reschedulePost(post, newDateTime);
   }
 
@@ -169,10 +211,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     Map<String, dynamic> post,
     DateTime newLocalDateTime,
   ) async {
-    final now = DateTime.now();
-
     // Client-side guard: don't allow scheduling in the past (>= 1 minute in the future)
-    if (newLocalDateTime.isBefore(now.add(const Duration(minutes: 1)))) {
+    if (_isPastForScheduling(newLocalDateTime)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -207,8 +247,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Planlama hatası: $e'),
-            backgroundColor: Colors.redAccent,
+            content: Text(
+              e is QueuedOfflineException ? e.message : 'Planlama hatası: $e',
+            ),
+            backgroundColor: e is QueuedOfflineException
+                ? Colors.orange
+                : Colors.redAccent,
           ),
         );
       }
@@ -369,9 +413,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       final dt = await showDatePicker(
                         context: dialogContext,
                         initialDate: scheduledDate,
-                        firstDate: DateTime.now().subtract(
-                          const Duration(days: 1),
-                        ),
+                        firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
                       if (dt != null) setState(() => scheduledDate = dt);
@@ -396,7 +438,31 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         context: dialogContext,
                         initialTime: scheduledTime,
                       );
-                      if (t != null) setState(() => scheduledTime = t);
+                      if (t == null) return;
+
+                      final candidate = DateTime(
+                        scheduledDate.year,
+                        scheduledDate.month,
+                        scheduledDate.day,
+                        t.hour,
+                        t.minute,
+                      );
+
+                      if (_isPastForScheduling(candidate)) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Geçmiş saat seçilemez (en az 1 dk sonrası).',
+                              ),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      setState(() => scheduledTime = t);
                     },
                   ),
                 ],
@@ -678,6 +744,64 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: SegmentedButton<_PostsTab>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _PostsTab.scheduled,
+                          label: Text('Zamanlanan'),
+                          icon: Icon(Icons.schedule),
+                        ),
+                        ButtonSegment(
+                          value: _PostsTab.published,
+                          label: Text('Yayınlanan'),
+                          icon: Icon(Icons.check_circle),
+                        ),
+                        ButtonSegment(
+                          value: _PostsTab.failed,
+                          label: Text('Başarısız'),
+                          icon: Icon(Icons.error),
+                        ),
+                      ],
+                      selected: {_postsTab},
+                      onSelectionChanged: (s) =>
+                          setState(() => _postsTab = s.first),
+                      style: ButtonStyle(
+                        foregroundColor: WidgetStateProperty.all(Colors.white),
+                        backgroundColor: WidgetStateProperty.resolveWith((
+                          states,
+                        ) {
+                          if (states.contains(WidgetState.selected)) {
+                            return AppTheme.primaryColor.withValues(
+                              alpha: 0.18,
+                            );
+                          }
+                          return Colors.transparent;
+                        }),
+                        side: WidgetStateProperty.all(
+                          BorderSide(
+                            color: Colors.white.withValues(alpha: 0.06),
+                          ),
+                        ),
+                        padding: WidgetStateProperty.all(
+                          const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                      showSelectedIcon: false,
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -848,51 +972,42 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             ),
           ),
           Expanded(
-            child: DefaultTabController(
-              length: 3,
-              child: Column(
-                children: [
-                  const TabBar(
-                    indicatorColor: AppTheme.primaryColor,
-                    labelColor: AppTheme.primaryColor,
-                    unselectedLabelColor: Colors.grey,
-                    tabs: [
-                      Tab(text: 'Zamanlanan'),
-                      Tab(text: 'Yayınlanan'),
-                      Tab(text: 'Başarısız'),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        _DayFilteredList(
-                          selectedDate: _selectedDate,
-                          postsAsync: scheduledAsync,
-                          isSameDay: _isSameLocalDay,
-                          emptyText: 'Bu gün için zamanlanan tweet yok.',
-                          status: '1',
-                          draggable: true,
-                        ),
-                        _DayFilteredList(
-                          selectedDate: _selectedDate,
-                          postsAsync: publishedAsync,
-                          isSameDay: _isSameLocalDay,
-                          emptyText: 'Bu gün için yayınlanan tweet yok.',
-                          status: '2',
-                          draggable: false,
-                        ),
-                        _DayFilteredList(
-                          selectedDate: _selectedDate,
-                          postsAsync: failedAsync,
-                          isSameDay: _isSameLocalDay,
-                          emptyText: 'Bu gün için başarısız tweet yok.',
-                          status: '3',
-                          draggable: true,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: Builder(
+                key: ValueKey(_postsTab),
+                builder: (context) {
+                  if (_postsTab == _PostsTab.scheduled) {
+                    return _DayFilteredList(
+                      selectedDate: _selectedDate,
+                      postsAsync: scheduledAsync,
+                      isSameDay: _isSameLocalDay,
+                      emptyText: 'Bu gün için zamanlanan tweet yok.',
+                      status: '1',
+                      draggable: true,
+                    );
+                  }
+                  if (_postsTab == _PostsTab.published) {
+                    return _DayFilteredList(
+                      selectedDate: _selectedDate,
+                      postsAsync: publishedAsync,
+                      isSameDay: _isSameLocalDay,
+                      emptyText: 'Bu gün için yayınlanan tweet yok.',
+                      status: '2',
+                      draggable: false,
+                    );
+                  }
+                  return _DayFilteredList(
+                    selectedDate: _selectedDate,
+                    postsAsync: failedAsync,
+                    isSameDay: _isSameLocalDay,
+                    emptyText: 'Bu gün için başarısız tweet yok.',
+                    status: '3',
+                    draggable: true,
+                  );
+                },
               ),
             ),
           ),
@@ -1100,6 +1215,8 @@ class _WeekStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final days = List.generate(7, (i) => weekStart.add(Duration(days: i)));
     final keyFmt = DateFormat('yyyy-MM-dd');
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     return Row(
       children: [
@@ -1108,7 +1225,10 @@ class _WeekStrip extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
               child: DragTarget<Map<String, dynamic>>(
-                onWillAcceptWithDetails: (_) => true,
+                onWillAcceptWithDetails: (_) {
+                  final d = DateTime(day.year, day.month, day.day);
+                  return !d.isBefore(today);
+                },
                 onAcceptWithDetails: (details) => onDropPost(details.data, day),
                 builder: (context, candidateData, rejectedData) {
                   final key = keyFmt.format(day);
@@ -1142,28 +1262,45 @@ class _WeekStrip extends StatelessWidget {
                           width: isDropping ? 2 : 1,
                         ),
                       ),
-                      child: Column(
+                      child: Stack(
                         children: [
-                          Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.95),
-                              fontWeight: FontWeight.bold,
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '${day.day}',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.95),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Center(
+                                  child: _Badges(
+                                    scheduled: s,
+                                    published: p,
+                                    failed: f,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          _Badges(scheduled: s, published: p, failed: f),
-                          if (isToday) ...[
-                            const SizedBox(height: 6),
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
+                          if (isToday)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
                               ),
                             ),
-                          ],
                         ],
                       ),
                     ),
@@ -1200,6 +1337,7 @@ class _DayTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeDay = DateTime(day.year, day.month, day.day);
+    final minAllowed = DateTime.now().add(const Duration(minutes: 1));
     final hours = List.generate(
       endHourInclusive - startHour + 1,
       (i) => startHour + i,
@@ -1228,9 +1366,10 @@ class _DayTimeline extends StatelessWidget {
               DateTime.now().hour == hour;
 
           final events = eventsByHour[hour] ?? const <_CalendarEvent>[];
+          final isPastSlot = slotTime.isBefore(minAllowed);
 
           return DragTarget<Map<String, dynamic>>(
-            onWillAcceptWithDetails: (_) => true,
+            onWillAcceptWithDetails: (_) => !isPastSlot,
             onAcceptWithDetails: (details) => onDropAt(details.data, slotTime),
             builder: (context, candidate, rejected) {
               final isDropping = candidate.isNotEmpty;
@@ -1257,11 +1396,15 @@ class _DayTimeline extends StatelessWidget {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.22),
+                        color: Colors.black.withValues(
+                          alpha: isPastSlot ? 0.12 : 0.22,
+                        ),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: isDropping
                               ? Colors.greenAccent.withValues(alpha: 0.7)
+                              : isPastSlot
+                              ? Colors.redAccent.withValues(alpha: 0.25)
                               : Colors.white.withValues(alpha: 0.06),
                           width: isDropping ? 2 : 1,
                         ),
@@ -1272,10 +1415,14 @@ class _DayTimeline extends StatelessWidget {
                           Row(
                             children: [
                               Icon(
-                                Icons.arrow_downward,
+                                isPastSlot
+                                    ? Icons.lock_clock
+                                    : Icons.arrow_downward,
                                 size: 16,
                                 color: isDropping
                                     ? Colors.greenAccent
+                                    : isPastSlot
+                                    ? Colors.redAccent.withValues(alpha: 0.7)
                                     : Colors.white.withValues(alpha: 0.35),
                               ),
                               const SizedBox(width: 8),
@@ -1283,9 +1430,11 @@ class _DayTimeline extends StatelessWidget {
                                 child: Text(
                                   isDropping
                                       ? 'Bırak → ${DateFormat('HH:mm').format(slotTime)}'
-                                      : (events.isEmpty
-                                            ? 'Buraya sürükle-bırak'
-                                            : 'Etkinlikler'),
+                                      : (isPastSlot
+                                            ? 'Geçmiş saat (kilitli)'
+                                            : (events.isEmpty
+                                                  ? 'Buraya sürükle-bırak'
+                                                  : 'Etkinlikler')),
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.55),
                                     fontSize: 12,
@@ -1437,6 +1586,8 @@ class _MonthGrid extends StatelessWidget {
     final start = _firstDayOfGrid(focusedMonth);
     final days = List.generate(42, (i) => start.add(Duration(days: i)));
     final keyFmt = DateFormat('yyyy-MM-dd');
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     return GridView.builder(
       shrinkWrap: true,
@@ -1460,8 +1611,14 @@ class _MonthGrid extends StatelessWidget {
         final p = publishedCounts[key] ?? 0;
         final f = failedCounts[key] ?? 0;
 
+        final isPastDay = DateTime(
+          day.year,
+          day.month,
+          day.day,
+        ).isBefore(today);
+
         return DragTarget<Map<String, dynamic>>(
-          onWillAcceptWithDetails: (_) => true,
+          onWillAcceptWithDetails: (_) => !isPastDay,
           onAcceptWithDetails: (details) => onDropPost(details.data, day),
           builder: (context, candidateData, rejectedData) {
             final isDropping = candidateData.isNotEmpty;
@@ -1486,36 +1643,61 @@ class _MonthGrid extends StatelessWidget {
                     width: isDropping ? 2 : 1,
                   ),
                 ),
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          '${day.day}',
-                          style: TextStyle(
-                            color: inMonth
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.45),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (isToday)
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
+                padding: EdgeInsets.zero,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Some layouts can temporarily give very small constraints (e.g. during
+                    // transitions or narrow containers). In that case, render a compact
+                    // cell to avoid RenderFlex overflow.
+                    final isCompact =
+                        constraints.maxWidth < 44 || constraints.maxHeight < 44;
+                    final padding = isCompact ? 4.0 : 8.0;
+
+                    return Padding(
+                      padding: EdgeInsets.all(padding),
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: Text(
+                              '${day.day}',
+                              style: TextStyle(
+                                color: inMonth
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.45),
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                      ],
-                    ),
-                    const Spacer(),
-                    _Badges(scheduled: s, published: p, failed: f),
-                  ],
+                          if (!isCompact)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _Badges(
+                                  scheduled: s,
+                                  published: p,
+                                  failed: f,
+                                ),
+                              ),
+                            ),
+                          if (isToday && !isCompact)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             );

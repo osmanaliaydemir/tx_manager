@@ -7,6 +7,7 @@ import 'package:tx_manager_mobile/data/models/tweet_template_model.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
 import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
 import 'package:tx_manager_mobile/presentation/home/scheduled_posts_controller.dart';
+import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 
@@ -280,12 +281,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         });
       }
     } catch (e) {
-      // If optimistic item exists, keep it only if the user is offline; otherwise it would be misleading.
-      // For simplicity we don't remove here (controller merge keeps local-only items); user can refresh.
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
-        );
+        if (e is QueuedOfflineException) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -902,7 +907,7 @@ class _DraftPicker extends ConsumerWidget {
               });
             },
             icon: const Icon(Icons.notes, color: Colors.white),
-            label: const Text('Taslaklardan seç'),
+            label: const Text('Uygulama taslakları'),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
               foregroundColor: Colors.white,
@@ -942,7 +947,7 @@ class _DraftsBottomSheet extends ConsumerWidget {
             Row(
               children: [
                 const Text(
-                  'Taslaklar',
+                  'Uygulama taslakları',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -958,6 +963,14 @@ class _DraftsBottomSheet extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 8),
+            Text(
+              'Not: X (Twitter) API taslakları listelemeye izin vermez. Bu liste, TX Asistan içinde “Taslak olarak kaydet” dediğin tweetleri gösterir.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
             draftsAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.all(24),
@@ -975,8 +988,9 @@ class _DraftsBottomSheet extends ConsumerWidget {
                   return const Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
-                      'Taslak bulunamadı.',
+                      'Taslak bulunamadı.\nİpucu: Planlama seçmeden “Taslak Olarak Kaydet” deyip burada görebilirsin.',
                       style: TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
                     ),
                   );
                 }

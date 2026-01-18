@@ -1,103 +1,103 @@
+using Hangfire;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TX_Manager.Api.Auth;
 using TX_Manager.Application.Common.Interfaces;
+using TX_Manager.Application.DTOs;
+using TX_Manager.Domain.Enums;
 
 namespace TX_Manager.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/suggestions")]
+[Authorize]
 public class SuggestionController : ControllerBase
 {
     private readonly IAIGeneratorService _aiService;
-    private readonly IApplicationDbContext _context;
+    private readonly ISuggestionService _suggestions;
+    private readonly IBackgroundJobClient _jobs;
 
-    public SuggestionController(IAIGeneratorService aiService, IApplicationDbContext context)
+    public SuggestionController(
+        IAIGeneratorService aiService,
+        ISuggestionService suggestions,
+        IBackgroundJobClient jobs)
     {
         _aiService = aiService;
-        _context = context;
+        _suggestions = suggestions;
+        _jobs = jobs;
     }
 
-    [HttpPost("generate/{userId}")]
-    public async Task<IActionResult> GenerateSuggestions(Guid userId)
+    [HttpPost("generate")]
+    public IActionResult GenerateSuggestions()
     {
-        // In real app, verify user permission
-        await _aiService.GenerateSuggestionsForUserAsync(userId);
-        return Ok(new { Message = "Suggestions generation triggered." });
+        var userId = User.GetUserId();
+        var jobId = _jobs.Enqueue(() => _aiService.GenerateSuggestionsForUserAsync(userId));
+        return Accepted(new { JobId = jobId });
     }
 
-    [HttpGet("{userId}")]
-    public IActionResult GetSuggestions(Guid userId)
+    [HttpGet]
+    public async Task<IActionResult> GetSuggestions(
+        [FromQuery] string? status,
+        [FromQuery] string? cursor,
+        [FromQuery] int take = 20)
     {
-        var suggestions = _context.ContentSuggestions
-            .Where(s => s.UserId == userId && s.Status == Domain.Enums.SuggestionStatus.Pending)
-            .OrderByDescending(s => s.GeneratedAt)
-            .Take(10)
-            .Select(s => new 
+        var userId = User.GetUserId();
+
+        SuggestionStatus? parsedStatus = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<SuggestionStatus>(status, ignoreCase: true, out var st))
             {
-                s.Id,
-                s.SuggestedText,
-                s.Rationale,
-                s.RiskAssessment,
-                GeneratedAt = s.GeneratedAt.ToString("g")
-            })
-            .ToList();
-            
-        return Ok(suggestions);
-    }
+                return BadRequest("Invalid status. Use Pending/Accepted/Rejected/Edited.");
+            }
+            parsedStatus = st;
+        }
 
-    public class AcceptRequest 
-    {
-        public DateTime? ScheduledFor { get; set; }
+        var result = await _suggestions.GetSuggestionsAsync(userId, parsedStatus, cursor, take);
+        return Ok(result);
     }
 
     [HttpPost("{id}/accept")]
-    public async Task<IActionResult> AcceptSuggestion(Guid id, [FromBody] AcceptRequest request)
+    public async Task<IActionResult> AcceptSuggestion(
+        Guid id,
+        [FromBody] AcceptSuggestionRequestDto request)
     {
-        var suggestion = await _context.ContentSuggestions.FindAsync(id);
-        if (suggestion == null) return NotFound();
+        var userId = User.GetUserId();
 
-        if (suggestion.Status != Domain.Enums.SuggestionStatus.Pending)
-            return BadRequest("Suggestion is not pending.");
-
-        suggestion.Status = Domain.Enums.SuggestionStatus.Accepted;
-
-        // Determine Scheduled Time
-        DateTime scheduledTime;
-        if (request != null && request.ScheduledFor.HasValue)
+        try
         {
-            scheduledTime = request.ScheduledFor.Value;
+            var res = await _suggestions.AcceptAsync(userId, id, request);
+            return Ok(res);
         }
-        else
+        catch (KeyNotFoundException)
         {
-            // Fallback: Schedule for tomorrow at random hour between 9-18
-            var randomHour = new Random().Next(9, 18);
-            scheduledTime = DateTime.UtcNow.Date.AddDays(1).AddHours(randomHour);
+            return NotFound();
         }
-
-        var post = new Domain.Entities.Post
+        catch (InvalidOperationException e)
         {
-            UserId = suggestion.UserId,
-            Content = suggestion.SuggestedText, // Content from Sugg
-            ScheduledFor = scheduledTime,
-            Status = Domain.Enums.PostStatus.Scheduled,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Posts.Add(post);
-        suggestion.ScheduledPost = post;
-
-        await _context.SaveChangesAsync();
-        return Ok(new { Message = "Suggestion accepted and scheduled.", ScheduledFor = scheduledTime });
+            return BadRequest(e.Message);
+        }
     }
 
     [HttpPost("{id}/reject")]
-    public async Task<IActionResult> RejectSuggestion(Guid id)
+    public async Task<IActionResult> RejectSuggestion(
+        Guid id,
+        [FromBody] RejectSuggestionRequestDto? request)
     {
-        var suggestion = await _context.ContentSuggestions.FindAsync(id);
-        if (suggestion == null) return NotFound();
+        var userId = User.GetUserId();
 
-        suggestion.Status = Domain.Enums.SuggestionStatus.Rejected;
-
-        await _context.SaveChangesAsync();
-        return Ok(new { Message = "Suggestion rejected." });
+        try
+        {
+            await _suggestions.RejectAsync(userId, id, request?.Reason);
+            return Ok();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(e.Message);
+        }
     }
 }

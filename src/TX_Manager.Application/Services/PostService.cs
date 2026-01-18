@@ -22,17 +22,20 @@ public class PostService : IPostService
     private readonly IApplicationDbContext _context;
     private readonly IXApiService _xApi;
     private readonly ITokenEncryptionService _encryption;
+    private readonly IPushNotificationService _push;
     private readonly ILogger<PostService> _logger;
 
     public PostService(
         IApplicationDbContext context, 
         IXApiService xApi,
         ITokenEncryptionService encryption,
+        IPushNotificationService push,
         ILogger<PostService> logger)
     {
         _context = context;
         _xApi = xApi;
         _encryption = encryption;
+        _push = push;
         _logger = logger;
     }
 
@@ -139,17 +142,17 @@ public class PostService : IPostService
         return posts.Adapt<IEnumerable<PostDto>>();
     }
 
-    public async Task<PostDto> GetPostByIdAsync(Guid id)
+    public async Task<PostDto> GetPostByIdAsync(Guid userId, Guid id)
     {
         var post = await _context.Posts.FindAsync(id);
-        if (post == null) throw new KeyNotFoundException("Post not found.");
+        if (post == null || post.UserId != userId) throw new KeyNotFoundException("Post not found.");
         return post.Adapt<PostDto>();
     }
 
-    public async Task<PostDto> UpdatePostAsync(Guid id, string content, DateTime? scheduledFor)
+    public async Task<PostDto> UpdatePostAsync(Guid userId, Guid id, string content, DateTime? scheduledFor)
     {
         var post = await _context.Posts.FindAsync(id);
-        if (post == null) throw new KeyNotFoundException("Post not found.");
+        if (post == null || post.UserId != userId) throw new KeyNotFoundException("Post not found.");
         
         if (post.Status == PostStatus.Published) throw new InvalidOperationException("Cannot update published posts.");
 
@@ -188,10 +191,10 @@ public class PostService : IPostService
         return post.Adapt<PostDto>();
     }
 
-    public async Task DeletePostAsync(Guid id)
+    public async Task DeletePostAsync(Guid userId, Guid id)
     {
         var post = await _context.Posts.FindAsync(id);
-        if (post == null) throw new KeyNotFoundException("Post not found.");
+        if (post == null || post.UserId != userId) throw new KeyNotFoundException("Post not found.");
 
         // Unlink related ContentSuggestions to prevent FK violation
         var linkedSuggestions = await _context.ContentSuggestions
@@ -209,10 +212,10 @@ public class PostService : IPostService
         await _context.SaveChangesAsync();
     }
 
-    public async Task CancelScheduleAsync(Guid id)
+    public async Task CancelScheduleAsync(Guid userId, Guid id)
     {
         var post = await _context.Posts.FindAsync(id);
-        if (post == null) throw new KeyNotFoundException("Post not found.");
+        if (post == null || post.UserId != userId) throw new KeyNotFoundException("Post not found.");
         if (post.Status == PostStatus.Published) throw new InvalidOperationException("Cannot cancel published posts.");
 
         post.ScheduledFor = null;
@@ -362,6 +365,17 @@ public class PostService : IPostService
                     result.PostsPublished++;
 
                     _logger.LogInformation("Successfully published post {PostId} to X ({XPostId})", post.Id, xId);
+
+                    // Best-effort push
+                    try
+                    {
+                        var preview = post.Content.Length <= 140 ? post.Content : post.Content[..140];
+                        await _push.NotifyPostPublishedAsync(post.UserId, post.Id, preview);
+                    }
+                    catch (Exception pex)
+                    {
+                        _logger.LogWarning(pex, "Push notify (published) failed for {PostId}", post.Id);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -371,6 +385,17 @@ public class PostService : IPostService
                     post.PublishLockId = null;
                     post.PublishLockedUntilUtc = null;
                     result.PostsFailed++;
+
+                    // Best-effort push
+                    try
+                    {
+                        var preview = post.Content.Length <= 140 ? post.Content : post.Content[..140];
+                        await _push.NotifyPostFailedAsync(post.UserId, post.Id, preview, post.FailureCode);
+                    }
+                    catch (Exception pex)
+                    {
+                        _logger.LogWarning(pex, "Push notify (failed) failed for {PostId}", post.Id);
+                    }
 
                     // Abort rest of thread if any.
                     for (var j = i + 1; j < ordered.Count; j++)

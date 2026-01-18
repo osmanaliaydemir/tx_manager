@@ -1,34 +1,40 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TX_Manager.Api.Auth;
 using TX_Manager.Application.Common.Interfaces;
 using TX_Manager.Domain.Entities;
 
 namespace TX_Manager.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth")]
 public class AuthController : ControllerBase
 {
     private readonly IXApiService _xApi;
     private readonly IApplicationDbContext _context;
     private readonly ITokenEncryptionService _encryption;
     private readonly IStrategyService _strategyService;
+    private readonly IJwtTokenService _jwt;
 
     public AuthController(
         IXApiService xApi, 
         IApplicationDbContext context,
         ITokenEncryptionService encryption,
-        IStrategyService strategyService)
+        IStrategyService strategyService,
+        IJwtTokenService jwt)
     {
         _xApi = xApi;
         _context = context;
         _encryption = encryption;
         _strategyService = strategyService;
+        _jwt = jwt;
     }
 
     [HttpGet("login")]
+    [AllowAnonymous]
     public IActionResult Login()
     {
         var url = _xApi.GetAuthorizationUrl();
@@ -36,6 +42,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("callback")]
+    [AllowAnonymous]
     public async Task<IActionResult> Callback(string code, string state)
     {
         if (string.IsNullOrEmpty(code)) return BadRequest("Code is missing");
@@ -87,8 +94,11 @@ public class AuthController : ControllerBase
             // Check Strategy
             var hasStrategy = await _strategyService.HasStrategyAsync(user.Id);
 
+            var accessToken = _jwt.CreateAccessToken(user.Id);
+
             // Redirect to Deep Link / Custom Scheme for mobile to intercept
-            return Redirect($"txmanager://auth-success?userId={user.Id}&hasStrategy={hasStrategy}");
+            // NOTE: token may contain URL-sensitive chars
+            return Redirect($"txmanager://auth-success?token={Uri.EscapeDataString(accessToken)}&hasStrategy={hasStrategy}");
         }
         catch (Exception ex)
         {
@@ -96,9 +106,11 @@ public class AuthController : ControllerBase
         }
     }
 
-    [HttpGet("me/{userId}")]
-    public async Task<IActionResult> GetMe(Guid userId)
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetMe()
     {
+        var userId = User.GetUserId();
         var user = await _context.Users.FindAsync(userId);
         if (user == null) return NotFound();
 
@@ -111,9 +123,11 @@ public class AuthController : ControllerBase
         });
     }
 
-    [HttpGet("status/{userId}")]
-    public async Task<IActionResult> GetAuthStatus(Guid userId)
+    [HttpGet("status")]
+    [Authorize]
+    public async Task<IActionResult> GetAuthStatus()
     {
+        var userId = User.GetUserId();
         var tokenEntity = await _context.AuthTokens.FirstOrDefaultAsync(t => t.UserId == userId);
         if (tokenEntity == null)
         {
@@ -161,9 +175,11 @@ public class AuthController : ControllerBase
         public int? TimeZoneOffsetMinutes { get; set; }
     }
 
-    [HttpPost("timezone/{userId}")]
-    public async Task<IActionResult> UpdateTimezone(Guid userId, [FromBody] UpdateTimezoneRequest request)
+    [HttpPost("timezone")]
+    [Authorize]
+    public async Task<IActionResult> UpdateTimezone([FromBody] UpdateTimezoneRequest request)
     {
+        var userId = User.GetUserId();
         var user = await _context.Users.FindAsync(userId);
         if (user == null) return NotFound();
 

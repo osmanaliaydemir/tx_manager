@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
+import 'package:tx_manager_mobile/data/repositories/user_repository.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -24,23 +25,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     await Future.delayed(const Duration(seconds: 1));
 
     const storage = FlutterSecureStorage();
-    final userId = await storage.read(key: 'auth_token');
+    final token = await storage.read(key: 'auth_token');
 
     if (!mounted) return;
 
-    if (userId != null) {
-      // User is logged in.
-      try {
-        // We can't easily check strategy existence without an API call.
-        // Let's assume Home, and if Home fails to load data due to missing strategy, it handles it?
-        // Or simply: Go to Home. If user came back, they likely finished onboarding.
-        // If not, Home will show empty state.
+    if (token != null && token.isNotEmpty) {
+      // Validate token best-effort; if invalid/expired, bounce to login.
+      final profile = await ref.read(userRepositoryProvider).getMyProfile();
+      if (!mounted) return;
 
-        // Let's try to be smart:
-        // We check if we have a strategy saved locally or check via API?
-        // Let's just go to /home for now to solve the immediate "login every time" issue.
+      if (profile != null) {
         context.go('/home');
-      } catch (e) {
+      } else {
+        await storage.delete(key: 'auth_token');
+        if (!mounted) return;
         context.go('/login');
       }
     } else {

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:tx_manager_mobile/core/constants/api_constants.dart';
 import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:tx_manager_mobile/core/notifications/push_registration_service.dart';
 
 final userRepositoryProvider = Provider((ref) => UserRepository());
 
@@ -40,11 +41,12 @@ class UserRepository {
 
   Future<UserProfile?> getMyProfile() async {
     try {
-      final userId = await _storage.read(key: 'auth_token');
-      if (userId == null) return null;
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/me/$userId'),
+        Uri.parse('${ApiConstants.baseUrl}/api/auth/me'),
+        headers: {'Authorization': 'Bearer $token'},
       );
 
       if (response.statusCode == 200) {
@@ -60,11 +62,12 @@ class UserRepository {
 
   Future<AuthStatus?> getAuthStatus() async {
     try {
-      final userId = await _storage.read(key: 'auth_token');
-      if (userId == null) return null;
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/status/$userId'),
+        Uri.parse('${ApiConstants.baseUrl}/api/auth/status'),
+        headers: {'Authorization': 'Bearer $token'},
       );
 
       if (response.statusCode == 200) {
@@ -83,12 +86,15 @@ class UserRepository {
     required int timeZoneOffsetMinutes,
   }) async {
     try {
-      final userId = await _storage.read(key: 'auth_token');
-      if (userId == null) return;
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null || token.isEmpty) return;
 
       await http.post(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/timezone/$userId'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('${ApiConstants.baseUrl}/api/auth/timezone'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
         body: jsonEncode({
           'timeZoneName': timeZoneName,
           'timeZoneOffsetMinutes': timeZoneOffsetMinutes,
@@ -100,6 +106,12 @@ class UserRepository {
   }
 
   Future<void> logout() async {
+    // Best-effort: unregister push token while JWT is still present.
+    try {
+      await PushRegistrationService.I.unregisterBestEffort();
+    } catch (_) {
+      // ignore
+    }
     await _storage.delete(key: 'auth_token');
   }
 }

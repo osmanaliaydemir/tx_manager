@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
+using TX_Manager.Application.Common.Interfaces;
 using TX_Manager.Application.Services;
 
 namespace TX_Manager.Application;
@@ -17,6 +18,7 @@ public static class DependencyInjection
 
         services.AddTransient<IPostService, PostService>();
         services.AddTransient<IAnalyticsService, AnalyticsService>();
+        services.AddTransient<ISuggestionService, SuggestionService>();
         
         return services;
     }

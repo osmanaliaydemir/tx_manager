@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:tx_manager_mobile/core/theme/app_theme.dart';
+import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
 import 'package:tx_manager_mobile/data/repositories/post_repository.dart';
 
 class ApprovalScreen extends ConsumerStatefulWidget {
@@ -49,18 +50,31 @@ class _ApprovalScreenState extends ConsumerState<ApprovalScreen> {
     if (scheduled == null) return;
 
     final newTime = scheduled.add(d);
-    await ref
-        .read(postRepositoryProvider)
-        .updatePost(widget.postId, content, newTime);
-    await _load();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Ertelendi: ${DateFormat('dd MMM HH:mm').format(newTime)}',
+    try {
+      await ref
+          .read(postRepositoryProvider)
+          .updatePost(widget.postId, content, newTime);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Ertelendi: ${DateFormat('dd MMM HH:mm').format(newTime)}',
+          ),
+          backgroundColor: Colors.green,
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is QueuedOfflineException ? e.message : 'Hata: $e'),
+          backgroundColor: e is QueuedOfflineException
+              ? Colors.orange
+              : Colors.redAccent,
+        ),
+      );
+    }
   }
 
   Future<void> _cancel() async {
@@ -90,12 +104,27 @@ class _ApprovalScreenState extends ConsumerState<ApprovalScreen> {
     );
     if (confirm != true || !mounted) return;
 
-    await ref.read(postRepositoryProvider).cancelSchedule(widget.postId);
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Planlama iptal edildi')));
-    await _load();
+    try {
+      await ref.read(postRepositoryProvider).cancelSchedule(widget.postId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Planlama iptal edildi'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is QueuedOfflineException ? e.message : 'Hata: $e'),
+          backgroundColor: e is QueuedOfflineException
+              ? Colors.orange
+              : Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override

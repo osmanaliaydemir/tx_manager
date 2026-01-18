@@ -38,5 +38,33 @@ It includes OAuth 2.0 PKCE authentication, post scheduling with Hangfire, and an
 - **Scheduling**: Posts can be scheduled. A background job checks every minute for due posts.
 - **Security**: Access tokens are encrypted using DPAPI (Windows) or AES (Failover/Linux).
 
+## JWT Auth
+- API artık mobil istemci için **JWT Bearer** kullanır.
+- JWT ayarları: `src/TX_Manager.Api/appsettings.json` içindeki `Jwt` bölümü.
+- Prod için **SigningKey’i appsettings’e yazmayın**: environment/secrets kullanın.
+
+## Push Notifications (FCM)
+Bu repo’da push altyapısı var; ancak Firebase dosyaları projeye eklenmeden push çalışmaz.
+
+### Backend
+- **Device token register**
+  - `POST /api/notifications/device-tokens/register` (JWT gerekli)
+  - `POST /api/notifications/device-tokens/unregister` (JWT gerekli)
+- **Config**: `src/TX_Manager.Api/appsettings.json` içindeki `Push:Fcm`
+  - `Enabled`: `true/false`
+  - `ServerKey`: (secret/env önerilir)
+
+### Mobile (Flutter)
+- Paketler: `firebase_core`, `firebase_messaging`
+- Firebase dosyaları (senin Firebase projen tarafından üretilmeli):
+  - Android: `mobile/android/app/google-services.json`
+  - iOS: `mobile/ios/Runner/GoogleService-Info.plist`
+- Not: Kod, Firebase init başarısız olursa (dosyalar yoksa) **crash etmez** ve push register’ı atlar.
+
+### Test (minimum)
+1) Mobilde login ol → `AuthWebView` sonrası register denenecek.  
+2) Backend’de `DeviceTokens` tablosunda ilgili kullanıcı için kayıt oluşmalı.  
+3) `Push:Fcm:Enabled=true` + `ServerKey` verdikten sonra publish/suggestions event’leri push tetikler.
+
 ## Notes
 - `XApiService` is currently a stub. Implement the HTTP calls to X API in `src/TX_Manager.Infrastructure/Services/XApiService.cs`.

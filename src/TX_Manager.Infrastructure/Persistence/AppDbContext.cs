@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TX_Manager.Application.Common.Interfaces;
 using TX_Manager.Domain.Entities;
 using System.Reflection;
+using TX_Manager.Infrastructure.Persistence.Entities;
 
 namespace TX_Manager.Infrastructure.Persistence;
 
@@ -17,6 +18,8 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<AnalyticsData> AnalyticsData => Set<AnalyticsData>();
     public DbSet<UserStrategy> UserStrategies => Set<UserStrategy>();
     public DbSet<ContentSuggestion> ContentSuggestions => Set<ContentSuggestion>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -39,5 +42,10 @@ public class AppDbContext : DbContext, IApplicationDbContext
             .HasMany(u => u.AnalyticsData)
             .WithOne(a => a.User)
             .HasForeignKey(a => a.UserId);
+
+        builder.Entity<User>()
+            .HasMany<DeviceToken>()
+            .WithOne(d => d.User)
+            .HasForeignKey(d => d.UserId);
     }
 }

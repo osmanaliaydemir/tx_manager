@@ -5,7 +5,8 @@ class ContentSuggestion {
   final String suggestedText;
   final String rationale;
   final String riskAssessment;
-  final String generatedAt;
+  final String estimatedImpact;
+  final DateTime generatedAtUtc;
   SuggestionStatus status;
 
   ContentSuggestion({
@@ -13,9 +14,32 @@ class ContentSuggestion {
     required this.suggestedText,
     required this.rationale,
     required this.riskAssessment,
-    required this.generatedAt,
+    required this.estimatedImpact,
+    required this.generatedAtUtc,
     this.status = SuggestionStatus.pending,
   });
+
+  static SuggestionStatus _parseStatus(dynamic v) {
+    if (v is String) {
+      switch (v.toLowerCase()) {
+        case 'accepted':
+          return SuggestionStatus.accepted;
+        case 'rejected':
+          return SuggestionStatus.rejected;
+        case 'edited':
+          return SuggestionStatus.edited;
+        default:
+          return SuggestionStatus.pending;
+      }
+    }
+    if (v is int) {
+      if (v == 1) return SuggestionStatus.accepted;
+      if (v == 2) return SuggestionStatus.rejected;
+      if (v == 3) return SuggestionStatus.edited;
+      return SuggestionStatus.pending;
+    }
+    return SuggestionStatus.pending;
+  }
 
   factory ContentSuggestion.fromJson(Map<String, dynamic> json) {
     return ContentSuggestion(
@@ -23,7 +47,11 @@ class ContentSuggestion {
       suggestedText: json['suggestedText'] ?? '',
       rationale: json['rationale'] ?? '',
       riskAssessment: json['riskAssessment'] ?? 'Low',
-      generatedAt: json['generatedAt'],
+      estimatedImpact: json['estimatedImpact'] ?? 'Unknown',
+      generatedAtUtc:
+          DateTime.tryParse((json['generatedAtUtc'] ?? '').toString()) ??
+          DateTime.now().toUtc(),
+      status: _parseStatus(json['status']),
     );
   }
 }
