@@ -1,11 +1,10 @@
-import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import 'package:tx_manager_mobile/core/constants/api_constants.dart';
 import 'package:tx_manager_mobile/domain/entities/user_profile.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:tx_manager_mobile/core/notifications/push_registration_service.dart';
+import 'package:tx_manager_mobile/core/network/api_dio.dart';
 
 final userRepositoryProvider = Provider((ref) => UserRepository());
 
@@ -38,22 +37,15 @@ class AuthStatus {
 
 class UserRepository {
   final _storage = const FlutterSecureStorage();
+  final Dio _dio = createApiDio();
 
   Future<UserProfile?> getMyProfile() async {
     try {
       final token = await _storage.read(key: 'auth_token');
       if (token == null || token.isEmpty) return null;
 
-      final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/me'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return UserProfile.fromJson(data);
-      }
-      return null;
+      final res = await _dio.get('/api/auth/me');
+      return UserProfile.fromJson(Map<String, dynamic>.from(res.data));
     } catch (e) {
       debugPrint("Error fetching profile: $e");
       return null;
@@ -65,16 +57,8 @@ class UserRepository {
       final token = await _storage.read(key: 'auth_token');
       if (token == null || token.isEmpty) return null;
 
-      final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/status'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return AuthStatus.fromJson(data);
-      }
-      return null;
+      final res = await _dio.get('/api/auth/status');
+      return AuthStatus.fromJson(Map<String, dynamic>.from(res.data));
     } catch (e) {
       debugPrint("Error fetching auth status: $e");
       return null;
@@ -89,16 +73,12 @@ class UserRepository {
       final token = await _storage.read(key: 'auth_token');
       if (token == null || token.isEmpty) return;
 
-      await http.post(
-        Uri.parse('${ApiConstants.baseUrl}/api/auth/timezone'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
+      await _dio.post(
+        '/api/auth/timezone',
+        data: {
           'timeZoneName': timeZoneName,
           'timeZoneOffsetMinutes': timeZoneOffsetMinutes,
-        }),
+        },
       );
     } catch (e) {
       debugPrint("Error updating timezone: $e");

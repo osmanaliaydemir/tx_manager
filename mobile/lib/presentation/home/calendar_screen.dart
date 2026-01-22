@@ -695,323 +695,350 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.glassBorder),
-              ),
-              child: Column(
-                children: [
-                  SegmentedButton<_CalendarViewMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: _CalendarViewMode.month,
-                        label: Text('Ay'),
-                        icon: Icon(Icons.calendar_view_month),
-                      ),
-                      ButtonSegment(
-                        value: _CalendarViewMode.week,
-                        label: Text('Hafta'),
-                        icon: Icon(Icons.view_week),
-                      ),
-                      ButtonSegment(
-                        value: _CalendarViewMode.day,
-                        label: Text('Gün'),
-                        icon: Icon(Icons.view_day),
-                      ),
-                    ],
-                    selected: {_viewMode},
-                    onSelectionChanged: (s) =>
-                        setState(() => _viewMode = s.first),
-                    style: ButtonStyle(
-                      foregroundColor: WidgetStateProperty.all(Colors.white),
-                      backgroundColor: WidgetStateProperty.resolveWith((
-                        states,
-                      ) {
-                        if (states.contains(WidgetState.selected)) {
-                          return AppTheme.primaryColor.withValues(alpha: 0.18);
-                        }
-                        return Colors.black.withValues(alpha: 0.2);
-                      }),
-                      side: WidgetStateProperty.all(
-                        BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(6),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // On short screens, the header panel can exceed available height
+          // (especially in month view). Make it scrollable with a max height.
+          final maxHeaderHeight = constraints.maxHeight * 0.55;
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeaderHeight),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
+                      color: AppTheme.surfaceColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.glassBorder),
                     ),
-                    child: SegmentedButton<_PostsTab>(
-                      segments: const [
-                        ButtonSegment(
-                          value: _PostsTab.scheduled,
-                          label: Text('Zamanlanan'),
-                          icon: Icon(Icons.schedule),
-                        ),
-                        ButtonSegment(
-                          value: _PostsTab.published,
-                          label: Text('Yayınlanan'),
-                          icon: Icon(Icons.check_circle),
-                        ),
-                        ButtonSegment(
-                          value: _PostsTab.failed,
-                          label: Text('Başarısız'),
-                          icon: Icon(Icons.error),
-                        ),
-                      ],
-                      selected: {_postsTab},
-                      onSelectionChanged: (s) =>
-                          setState(() => _postsTab = s.first),
-                      style: ButtonStyle(
-                        foregroundColor: WidgetStateProperty.all(Colors.white),
-                        backgroundColor: WidgetStateProperty.resolveWith((
-                          states,
-                        ) {
-                          if (states.contains(WidgetState.selected)) {
-                            return AppTheme.primaryColor.withValues(
-                              alpha: 0.18,
-                            );
-                          }
-                          return Colors.transparent;
-                        }),
-                        side: WidgetStateProperty.all(
-                          BorderSide(
-                            color: Colors.white.withValues(alpha: 0.06),
-                          ),
-                        ),
-                        padding: WidgetStateProperty.all(
-                          const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 10,
-                          ),
-                        ),
-                      ),
-                      showSelectedIcon: false,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: _viewMode == _CalendarViewMode.week
-                            ? 'Önceki hafta'
-                            : _viewMode == _CalendarViewMode.day
-                            ? 'Önceki gün'
-                            : 'Önceki ay',
-                        onPressed: () {
-                          setState(() {
-                            if (_viewMode == _CalendarViewMode.month) {
-                              _focusedMonth = DateTime(
-                                _focusedMonth.year,
-                                _focusedMonth.month - 1,
-                                1,
-                              );
-                            } else if (_viewMode == _CalendarViewMode.week) {
-                              _selectedDate = _selectedDate.subtract(
-                                const Duration(days: 7),
-                              );
-                              _focusedMonth = DateTime(
-                                _selectedDate.year,
-                                _selectedDate.month,
-                                1,
-                              );
-                            } else {
-                              _selectedDate = _selectedDate.subtract(
-                                const Duration(days: 1),
-                              );
-                              _focusedMonth = DateTime(
-                                _selectedDate.year,
-                                _selectedDate.month,
-                                1,
-                              );
-                            }
-                          });
-                        },
-                        icon: const Icon(
-                          Icons.chevron_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            _viewMode == _CalendarViewMode.week
-                                ? '${DateFormat('dd MMM', 'tr_TR').format(weekStart)} - ${DateFormat('dd MMM', 'tr_TR').format(weekStart.add(const Duration(days: 6)))}'
-                                : _viewMode == _CalendarViewMode.day
-                                ? formatter.format(_selectedDate)
-                                : monthFormatter.format(_focusedMonth),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          SegmentedButton<_CalendarViewMode>(
+                            segments: const [
+                              ButtonSegment(
+                                value: _CalendarViewMode.month,
+                                label: Text('Ay'),
+                                icon: Icon(Icons.calendar_view_month),
+                              ),
+                              ButtonSegment(
+                                value: _CalendarViewMode.week,
+                                label: Text('Hafta'),
+                                icon: Icon(Icons.view_week),
+                              ),
+                              ButtonSegment(
+                                value: _CalendarViewMode.day,
+                                label: Text('Gün'),
+                                icon: Icon(Icons.view_day),
+                              ),
+                            ],
+                            selected: {_viewMode},
+                            onSelectionChanged: (s) =>
+                                setState(() => _viewMode = s.first),
+                            style: ButtonStyle(
+                              foregroundColor: WidgetStateProperty.all(
+                                Colors.white,
+                              ),
+                              backgroundColor: WidgetStateProperty.resolveWith((
+                                states,
+                              ) {
+                                if (states.contains(WidgetState.selected)) {
+                                  return AppTheme.primaryColor.withValues(
+                                    alpha: 0.18,
+                                  );
+                                }
+                                return Colors.black.withValues(alpha: 0.2);
+                              }),
+                              side: WidgetStateProperty.all(
+                                BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: _viewMode == _CalendarViewMode.week
-                            ? 'Sonraki hafta'
-                            : _viewMode == _CalendarViewMode.day
-                            ? 'Sonraki gün'
-                            : 'Sonraki ay',
-                        onPressed: () {
-                          setState(() {
-                            if (_viewMode == _CalendarViewMode.month) {
-                              _focusedMonth = DateTime(
-                                _focusedMonth.year,
-                                _focusedMonth.month + 1,
-                                1,
-                              );
-                            } else if (_viewMode == _CalendarViewMode.week) {
-                              _selectedDate = _selectedDate.add(
-                                const Duration(days: 7),
-                              );
-                              _focusedMonth = DateTime(
-                                _selectedDate.year,
-                                _selectedDate.month,
-                                1,
-                              );
-                            } else {
-                              _selectedDate = _selectedDate.add(
-                                const Duration(days: 1),
-                              );
-                              _focusedMonth = DateTime(
-                                _selectedDate.year,
-                                _selectedDate.month,
-                                1,
-                              );
-                            }
-                          });
-                        },
-                        icon: const Icon(
-                          Icons.chevron_right,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (_viewMode == _CalendarViewMode.month) ...[
-                    _WeekdayHeader(),
-                    const SizedBox(height: 8),
-                    _MonthGrid(
-                      focusedMonth: _focusedMonth,
-                      selectedDate: _selectedDate,
-                      isSameDay: _isSameLocalDay,
-                      scheduledCounts: scheduledCounts,
-                      publishedCounts: publishedCounts,
-                      failedCounts: failedCounts,
-                      onSelectDay: (day) {
-                        setState(() => _selectedDate = day);
-                      },
-                      onDropPost: (post, day) => _rescheduleByDrop(post, day),
-                    ),
-                  ] else if (_viewMode == _CalendarViewMode.week) ...[
-                    _WeekdayHeader(),
-                    const SizedBox(height: 8),
-                    _WeekStrip(
-                      weekStart: weekStart,
-                      selectedDate: _selectedDate,
-                      isSameDay: _isSameLocalDay,
-                      scheduledCounts: scheduledWeekCounts,
-                      publishedCounts: publishedWeekCounts,
-                      failedCounts: failedWeekCounts,
-                      onSelectDay: (d) => setState(() => _selectedDate = d),
-                      onDropPost: (post, day) => _rescheduleByDrop(post, day),
-                    ),
-                  ] else ...[
-                    _DayTimeline(
-                      day: _selectedDate,
-                      startHour: _dayStartHour,
-                      endHourInclusive: _dayEndHourInclusive,
-                      onDropAt: (post, dt) => _reschedulePost(post, dt),
-                      eventsByHour: eventsByHour,
-                      onTapEvent: (e) =>
-                          _showEditDialogForPost(e.post, e.status),
-                      colorForStatus: _colorForStatus,
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.event,
-                        color: AppTheme.primaryColor,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Seçili gün: ${formatter.format(_selectedDate)}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: SegmentedButton<_PostsTab>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: _PostsTab.scheduled,
+                                  label: Text('Zamanlanan'),
+                                  icon: Icon(Icons.schedule),
+                                ),
+                                ButtonSegment(
+                                  value: _PostsTab.published,
+                                  label: Text('Yayınlanan'),
+                                  icon: Icon(Icons.check_circle),
+                                ),
+                                ButtonSegment(
+                                  value: _PostsTab.failed,
+                                  label: Text('Başarısız'),
+                                  icon: Icon(Icons.error),
+                                ),
+                              ],
+                              selected: {_postsTab},
+                              onSelectionChanged: (s) =>
+                                  setState(() => _postsTab = s.first),
+                              style: ButtonStyle(
+                                foregroundColor: WidgetStateProperty.all(
+                                  Colors.white,
+                                ),
+                                backgroundColor:
+                                    WidgetStateProperty.resolveWith((states) {
+                                      if (states.contains(
+                                        WidgetState.selected,
+                                      )) {
+                                        return AppTheme.primaryColor.withValues(
+                                          alpha: 0.18,
+                                        );
+                                      }
+                                      return Colors.transparent;
+                                    }),
+                                side: WidgetStateProperty.all(
+                                  BorderSide(
+                                    color: Colors.white.withValues(alpha: 0.06),
+                                  ),
+                                ),
+                                padding: WidgetStateProperty.all(
+                                  const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 10,
+                                  ),
+                                ),
+                              ),
+                              showSelectedIcon: false,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              IconButton(
+                                tooltip: _viewMode == _CalendarViewMode.week
+                                    ? 'Önceki hafta'
+                                    : _viewMode == _CalendarViewMode.day
+                                    ? 'Önceki gün'
+                                    : 'Önceki ay',
+                                onPressed: () {
+                                  setState(() {
+                                    if (_viewMode == _CalendarViewMode.month) {
+                                      _focusedMonth = DateTime(
+                                        _focusedMonth.year,
+                                        _focusedMonth.month - 1,
+                                        1,
+                                      );
+                                    } else if (_viewMode ==
+                                        _CalendarViewMode.week) {
+                                      _selectedDate = _selectedDate.subtract(
+                                        const Duration(days: 7),
+                                      );
+                                      _focusedMonth = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        1,
+                                      );
+                                    } else {
+                                      _selectedDate = _selectedDate.subtract(
+                                        const Duration(days: 1),
+                                      );
+                                      _focusedMonth = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        1,
+                                      );
+                                    }
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.chevron_left,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Expanded(
+                                child: Center(
+                                  child: Text(
+                                    _viewMode == _CalendarViewMode.week
+                                        ? '${DateFormat('dd MMM', 'tr_TR').format(weekStart)} - ${DateFormat('dd MMM', 'tr_TR').format(weekStart.add(const Duration(days: 6)))}'
+                                        : _viewMode == _CalendarViewMode.day
+                                        ? formatter.format(_selectedDate)
+                                        : monthFormatter.format(_focusedMonth),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: _viewMode == _CalendarViewMode.week
+                                    ? 'Sonraki hafta'
+                                    : _viewMode == _CalendarViewMode.day
+                                    ? 'Sonraki gün'
+                                    : 'Sonraki ay',
+                                onPressed: () {
+                                  setState(() {
+                                    if (_viewMode == _CalendarViewMode.month) {
+                                      _focusedMonth = DateTime(
+                                        _focusedMonth.year,
+                                        _focusedMonth.month + 1,
+                                        1,
+                                      );
+                                    } else if (_viewMode ==
+                                        _CalendarViewMode.week) {
+                                      _selectedDate = _selectedDate.add(
+                                        const Duration(days: 7),
+                                      );
+                                      _focusedMonth = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        1,
+                                      );
+                                    } else {
+                                      _selectedDate = _selectedDate.add(
+                                        const Duration(days: 1),
+                                      );
+                                      _focusedMonth = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        1,
+                                      );
+                                    }
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (_viewMode == _CalendarViewMode.month) ...[
+                            _WeekdayHeader(),
+                            const SizedBox(height: 8),
+                            _MonthGrid(
+                              focusedMonth: _focusedMonth,
+                              selectedDate: _selectedDate,
+                              isSameDay: _isSameLocalDay,
+                              scheduledCounts: scheduledCounts,
+                              publishedCounts: publishedCounts,
+                              failedCounts: failedCounts,
+                              onSelectDay: (day) {
+                                setState(() => _selectedDate = day);
+                              },
+                              onDropPost: (post, day) =>
+                                  _rescheduleByDrop(post, day),
+                            ),
+                          ] else if (_viewMode == _CalendarViewMode.week) ...[
+                            _WeekdayHeader(),
+                            const SizedBox(height: 8),
+                            _WeekStrip(
+                              weekStart: weekStart,
+                              selectedDate: _selectedDate,
+                              isSameDay: _isSameLocalDay,
+                              scheduledCounts: scheduledWeekCounts,
+                              publishedCounts: publishedWeekCounts,
+                              failedCounts: failedWeekCounts,
+                              onSelectDay: (d) =>
+                                  setState(() => _selectedDate = d),
+                              onDropPost: (post, day) =>
+                                  _rescheduleByDrop(post, day),
+                            ),
+                          ] else ...[
+                            _DayTimeline(
+                              day: _selectedDate,
+                              startHour: _dayStartHour,
+                              endHourInclusive: _dayEndHourInclusive,
+                              onDropAt: (post, dt) => _reschedulePost(post, dt),
+                              eventsByHour: eventsByHour,
+                              onTapEvent: (e) =>
+                                  _showEditDialogForPost(e.post, e.status),
+                              colorForStatus: _colorForStatus,
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.event,
+                                color: AppTheme.primaryColor,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Seçili gün: ${formatter.format(_selectedDate)}',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _pickDate,
+                                child: const Text('Tarih seç'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: _pickDate,
-                        child: const Text('Tarih seç'),
-                      ),
-                    ],
+                    ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              child: Builder(
-                key: ValueKey(_postsTab),
-                builder: (context) {
-                  if (_postsTab == _PostsTab.scheduled) {
-                    return _DayFilteredList(
-                      selectedDate: _selectedDate,
-                      postsAsync: scheduledAsync,
-                      isSameDay: _isSameLocalDay,
-                      emptyText: 'Bu gün için zamanlanan tweet yok.',
-                      status: '1',
-                      draggable: true,
-                    );
-                  }
-                  if (_postsTab == _PostsTab.published) {
-                    return _DayFilteredList(
-                      selectedDate: _selectedDate,
-                      postsAsync: publishedAsync,
-                      isSameDay: _isSameLocalDay,
-                      emptyText: 'Bu gün için yayınlanan tweet yok.',
-                      status: '2',
-                      draggable: false,
-                    );
-                  }
-                  return _DayFilteredList(
-                    selectedDate: _selectedDate,
-                    postsAsync: failedAsync,
-                    isSameDay: _isSameLocalDay,
-                    emptyText: 'Bu gün için başarısız tweet yok.',
-                    status: '3',
-                    draggable: true,
-                  );
-                },
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: Builder(
+                    key: ValueKey(_postsTab),
+                    builder: (context) {
+                      if (_postsTab == _PostsTab.scheduled) {
+                        return _DayFilteredList(
+                          selectedDate: _selectedDate,
+                          postsAsync: scheduledAsync,
+                          isSameDay: _isSameLocalDay,
+                          emptyText: 'Bu gün için zamanlanan tweet yok.',
+                          status: '1',
+                          draggable: true,
+                        );
+                      }
+                      if (_postsTab == _PostsTab.published) {
+                        return _DayFilteredList(
+                          selectedDate: _selectedDate,
+                          postsAsync: publishedAsync,
+                          isSameDay: _isSameLocalDay,
+                          emptyText: 'Bu gün için yayınlanan tweet yok.',
+                          status: '2',
+                          draggable: false,
+                        );
+                      }
+                      return _DayFilteredList(
+                        selectedDate: _selectedDate,
+                        postsAsync: failedAsync,
+                        isSameDay: _isSameLocalDay,
+                        emptyText: 'Bu gün için başarısız tweet yok.',
+                        status: '3',
+                        draggable: true,
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1649,8 +1676,12 @@ class _MonthGrid extends StatelessWidget {
                     // Some layouts can temporarily give very small constraints (e.g. during
                     // transitions or narrow containers). In that case, render a compact
                     // cell to avoid RenderFlex overflow.
+                    // NOTE:
+                    // On phones, month cells can be short (height ~40) due to childAspectRatio.
+                    // If we hide badges in that case, users think "no scheduled posts".
+                    // So keep compact threshold conservative and show dot-badges even when compact.
                     final isCompact =
-                        constraints.maxWidth < 44 || constraints.maxHeight < 44;
+                        constraints.maxWidth < 40 || constraints.maxHeight < 34;
                     final padding = isCompact ? 4.0 : 8.0;
 
                     return Padding(
@@ -1668,19 +1699,24 @@ class _MonthGrid extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (!isCompact)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: Center(
-                                child: _Badges(
-                                  scheduled: s,
-                                  published: p,
-                                  failed: f,
-                                ),
-                              ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: isCompact
+                                  ? _DotBadges(
+                                      scheduled: s,
+                                      published: p,
+                                      failed: f,
+                                    )
+                                  : _Badges(
+                                      scheduled: s,
+                                      published: p,
+                                      failed: f,
+                                    ),
                             ),
+                          ),
                           if (isToday && !isCompact)
                             Positioned(
                               top: 0,
@@ -1710,6 +1746,39 @@ class _MonthGrid extends StatelessWidget {
   DateTime _firstDayOfGrid(DateTime monthStart) {
     final weekday = monthStart.weekday; // Mon=1..Sun=7
     return monthStart.subtract(Duration(days: weekday - 1));
+  }
+}
+
+class _DotBadges extends StatelessWidget {
+  final int scheduled;
+  final int published;
+  final int failed;
+
+  const _DotBadges({
+    required this.scheduled,
+    required this.published,
+    required this.failed,
+  });
+
+  Widget _dot(int count, Color color) {
+    if (count <= 0) return const SizedBox.shrink();
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 4,
+      children: [
+        _dot(scheduled, Colors.orange),
+        _dot(published, Colors.green),
+        _dot(failed, Colors.redAccent),
+      ],
+    );
   }
 }
 

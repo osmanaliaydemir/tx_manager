@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tx_manager_mobile/presentation/auth/login_screen.dart';
 import 'package:tx_manager_mobile/presentation/auth/auth_webview.dart';
@@ -6,7 +7,10 @@ import 'package:tx_manager_mobile/presentation/onboarding/onboarding_screen.dart
 import 'package:tx_manager_mobile/presentation/splash/splash_screen.dart';
 import 'package:tx_manager_mobile/presentation/notifications/approval_screen.dart';
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation: '/splash',
   routes: [
     GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),

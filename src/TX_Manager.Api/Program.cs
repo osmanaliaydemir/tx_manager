@@ -1,4 +1,5 @@
 using Hangfire;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -12,6 +13,7 @@ using TX_Manager.Application.Common.Time;
 using TX_Manager.Application.Common.Observability;
 using TX_Manager.Application.Services;
 using TX_Manager.Infrastructure;
+using TX_Manager.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,6 +62,24 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Best-effort auto-migrate in Development (and optionally via config).
+// This prevents runtime failures like "Invalid object name 'IdempotencyRecords'".
+var autoMigrate = app.Environment.IsDevelopment() ||
+                  builder.Configuration.GetValue<bool>("Database:AutoMigrate");
+if (autoMigrate)
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Database auto-migration failed.");
+    }
+}
 
 // 3. Configure Pipeline
 if (app.Environment.IsDevelopment())

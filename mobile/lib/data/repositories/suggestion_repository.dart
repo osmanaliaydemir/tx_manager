@@ -1,9 +1,12 @@
 import 'package:dio/dio.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:tx_manager_mobile/core/constants/api_constants.dart';
 import 'package:tx_manager_mobile/core/offline/outbox.dart';
 import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
+import 'package:tx_manager_mobile/core/network/api_dio.dart';
 import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
 import 'package:tx_manager_mobile/domain/entities/content_suggestion.dart';
 
@@ -12,12 +15,7 @@ final suggestionRepositoryProvider = Provider(
 );
 
 class SuggestionRepository {
-  final Dio _dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
-    ),
-  );
+  final Dio _dio = createApiDio();
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final OutboxProcessor _outbox;
 
@@ -31,6 +29,43 @@ class SuggestionRepository {
       throw Exception('User not authenticated');
     }
     return {'Authorization': 'Bearer $token', if (extra != null) ...extra};
+  }
+
+  bool _shouldEnqueue(DioException e) {
+    final status = e.response?.statusCode;
+    if (status != null) {
+      if (status == 401 || status == 403) return false;
+      if (status >= 400 && status < 500 && status != 409 && status != 429) {
+        return false;
+      }
+      return status == 409 || status == 429 || status >= 500;
+    }
+
+    if (e.type == DioExceptionType.unknown) {
+      final err = e.error;
+      return err is SocketException ||
+          err is HandshakeException ||
+          err is HttpException;
+    }
+
+    return e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.connectionError;
+  }
+
+  String _queuedMessage(DioException e, String op) {
+    final status = e.response?.statusCode;
+    if (status == 500 || status == 502 || status == 503 || status == 504) {
+      return 'Sunucu hatası (HTTP $status). İşlem kuyruğa alındı; birazdan tekrar denenecek.';
+    }
+    if (status == 429) {
+      return 'Çok fazla istek (rate limit). İşlem kuyruğa alındı; birazdan tekrar denenecek.';
+    }
+    if (status == 409) {
+      return 'İşlem zaten devam ediyor (409). Kuyruğa alındı; tekrar denenecek.';
+    }
+    return 'Bağlantı sorunu nedeniyle gönderilemedi. İşlem kuyruğa alındı; bağlantı gelince otomatik denenecek.';
   }
 
   Future<void> triggerGeneration() async {
@@ -126,8 +161,15 @@ class SuggestionRepository {
       } catch (_) {
         // Best-effort: do not block UX if parsing/scheduling fails
       }
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:acceptSuggestion status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.acceptSuggestion, {
           'suggestionId': suggestionId,
           'auto': auto,
@@ -136,8 +178,8 @@ class SuggestionRepository {
           'preferredEndLocalHour': preferredEndLocalHour,
           'scheduledForUtc': scheduledForLocal?.toUtc().toIso8601String(),
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Öneri aksiyonu kuyruğa alındı; bağlantı gelince otomatik uygulanacak.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'acceptSuggestion'),
         );
       }
       rethrow;
@@ -160,14 +202,21 @@ class SuggestionRepository {
             ? {}
             : {'reason': reason.trim()},
       );
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:rejectSuggestion status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.rejectSuggestion, {
           'suggestionId': suggestionId,
           'reason': reason,
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Reddetme işlemi kuyruğa alındı; bağlantı gelince otomatik uygulanacak.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'rejectSuggestion'),
         );
       }
       rethrow;

@@ -569,8 +569,10 @@ class _PostCardState extends ConsumerState<PostCard> {
     );
 
     if (confirm == true) {
-      await ref.read(postRepositoryProvider).deletePost(post['id']);
-      if (mounted) {
+      try {
+        await ref.read(postRepositoryProvider).deletePost(post['id']);
+        if (!mounted) return;
+
         // Refresh the list
         ref.invalidate(postsProvider(widget.status));
 
@@ -578,6 +580,16 @@ class _PostCardState extends ConsumerState<PostCard> {
           const SnackBar(
             content: Text("Gönderi silindi"),
             backgroundColor: Colors.redAccent,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e is QueuedOfflineException ? e.message : 'Hata: $e'),
+            backgroundColor: e is QueuedOfflineException
+                ? Colors.orange
+                : Colors.redAccent,
           ),
         );
       }

@@ -1,20 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:tx_manager_mobile/core/constants/api_constants.dart';
+import 'package:tx_manager_mobile/core/network/api_dio.dart';
 import 'package:tx_manager_mobile/domain/entities/strategy.dart';
 
 // Provider Definition
 final strategyRepositoryProvider = Provider((ref) => StrategyRepository());
 
 class StrategyRepository {
-  final Dio _dio = Dio();
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final Dio _dio = createApiDio();
 
   Future<void> saveStrategy(UserStrategy strategy) async {
-    final token = await _storage.read(key: 'auth_token');
-    if (token == null || token.isEmpty) throw Exception('User not authenticated');
-
     // Convert Enums to Indexes or Strings matching Backend
     // Backend expects Int for Enum (0,1,2..) usually if default JSON serialization
     final data = {
@@ -25,11 +20,7 @@ class StrategyRepository {
     };
 
     try {
-      await _dio.post(
-        '${ApiConstants.baseUrl}/api/strategy',
-        data: data,
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
+      await _dio.post('/api/strategy', data: data);
     } catch (e) {
       throw Exception("Failed to save strategy: $e");
     }

@@ -629,14 +629,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       size: 18,
                                     ),
                                     const SizedBox(width: 12),
-                                    Text(
-                                      _scheduledDate != null
-                                          ? dateFormat.format(_scheduledDate!)
-                                          : 'Tarih seç',
-                                      style: TextStyle(
-                                        color: _scheduledDate != null
-                                            ? Colors.white
-                                            : Colors.grey[600],
+                                    Expanded(
+                                      child: Text(
+                                        _scheduledDate != null
+                                            ? dateFormat.format(_scheduledDate!)
+                                            : 'Tarih seç',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: _scheduledDate != null
+                                              ? Colors.white
+                                              : Colors.grey[600],
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -668,14 +672,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       size: 18,
                                     ),
                                     const SizedBox(width: 12),
-                                    Text(
-                                      _scheduledTime != null
-                                          ? _scheduledTime!.format(context)
-                                          : 'Saat seç',
-                                      style: TextStyle(
-                                        color: _scheduledTime != null
-                                            ? Colors.white
-                                            : Colors.grey[600],
+                                    Expanded(
+                                      child: Text(
+                                        _scheduledTime != null
+                                            ? _scheduledTime!.format(context)
+                                            : 'Saat seç',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: _scheduledTime != null
+                                              ? Colors.white
+                                              : Colors.grey[600],
+                                        ),
                                       ),
                                     ),
                                   ],

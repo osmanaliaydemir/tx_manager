@@ -79,26 +79,74 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     await processor.retryOne(actionId: actionId, execute: exec.execute);
   }
 
-  Widget _outboxBanner(int outboxCount) {
+  Future<void> _openOutboxSheet(int outboxCount) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => OutboxSheet(
+        onFlushNow: () async {
+          _flushOutbox();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        },
+        onRetryOne: (id) async {
+          await _retryOne(id);
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        },
+      ),
+    );
+  }
+
+  Widget _outboxBanner({
+    required int total,
+    required int active,
+    required int dead,
+    required bool needsLogin,
+  }) {
+    final showRetry = active > 0;
+    final icon = needsLogin
+        ? Icons.lock_outline
+        : dead > 0
+        ? Icons.warning_amber_rounded
+        : Icons.cloud_off;
+
+    final color = needsLogin
+        ? Colors.orange
+        : dead > 0
+        ? Colors.amber
+        : Colors.orange;
+
+    final text = needsLogin
+        ? '$total işlem bekliyor. Devam etmek için giriş gerekli.'
+        : dead > 0 && active == 0
+        ? '$dead işlem müdahale bekliyor (kuyrukta).'
+        : '$active işlem kuyruğa alındı. Bağlantı gelince otomatik denenecek.';
+
     return Material(
-      color: Colors.orange.withValues(alpha: 0.16),
+      color: color.withValues(alpha: 0.16),
       child: SafeArea(
         bottom: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Row(
             children: [
-              const Icon(Icons.cloud_off, color: Colors.orange),
+              Icon(icon, color: color),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '$outboxCount işlem kuyruğa alındı. Bağlantı gelince otomatik denenecek.',
+                  text,
                   style: const TextStyle(color: Colors.white70),
                 ),
               ),
               TextButton(
-                onPressed: () => _flushOutbox(),
-                child: const Text('Şimdi dene'),
+                onPressed: () async {
+                  if (showRetry) {
+                    _flushOutbox();
+                    return;
+                  }
+                  await _openOutboxSheet(total);
+                },
+                child: Text(showRetry ? 'Şimdi dene' : 'Kuyruğu aç'),
               ),
             ],
           ),
@@ -141,11 +189,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final outboxCount = ref
         .watch(outboxCountProvider)
         .maybeWhen(data: (v) => v, orElse: () => 0);
+    final outboxItems = ref
+        .watch(outboxItemsProvider)
+        .maybeWhen(data: (v) => v, orElse: () => const <OutboxAction>[]);
+    final activeCount = outboxItems.where((x) => !x.isDeadLettered).length;
+    final deadCount = outboxItems.where((x) => x.isDeadLettered).length;
+    final needsLogin = outboxItems.any(
+      (x) => x.lastError == 'HTTP 401' || x.lastError == 'HTTP 403',
+    );
 
     return Scaffold(
       body: Column(
         children: [
-          if (outboxCount > 0) _outboxBanner(outboxCount),
+          if (outboxCount > 0)
+            _outboxBanner(
+              total: outboxCount,
+              active: activeCount,
+              dead: deadCount,
+              needsLogin: needsLogin,
+            ),
           Expanded(
             child: IndexedStack(index: _currentIndex, children: _screens),
           ),
@@ -159,26 +221,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               icon: const Icon(Icons.cloud_upload),
               label: Text('Kuyruk ($outboxCount)'),
               onPressed: () async {
-                await showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => OutboxSheet(
-                    onFlushNow: () async {
-                      _flushOutbox();
-                      // give it a moment; flush is async and best-effort
-                      await Future<void>.delayed(
-                        const Duration(milliseconds: 200),
-                      );
-                    },
-                    onRetryOne: (id) async {
-                      await _retryOne(id);
-                      await Future<void>.delayed(
-                        const Duration(milliseconds: 200),
-                      );
-                    },
-                  ),
-                );
+                await _openOutboxSheet(outboxCount);
               },
             ),
       bottomNavigationBar: NavigationBar(

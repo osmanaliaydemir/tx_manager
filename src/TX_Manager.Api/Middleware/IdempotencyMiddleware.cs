@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Data.SqlClient;
 using TX_Manager.Infrastructure.Persistence;
 using TX_Manager.Infrastructure.Persistence.Entities;
 
@@ -56,6 +57,20 @@ public class IdempotencyMiddleware
 
         // Normalize request identity (ignore query string on purpose; key should be unique per semantic request).
         var path = context.Request.Path.Value ?? "/";
+
+        // Fail-open if migrations were not applied yet (e.g. missing IdempotencyRecords table).
+        if (!await IsIdempotencyTableAvailableAsync(db, context.RequestAborted))
+        {
+            _logger.LogError(
+                "Idempotency table is missing. Bypassing IdempotencyMiddleware for {Method} {Path}. " +
+                "Apply EF migrations to create IdempotencyRecords.",
+                method,
+                path
+            );
+
+            await _next(context);
+            return;
+        }
 
         // 1) If we already have a completed response, replay it.
         var existing = await db.IdempotencyRecords
@@ -203,6 +218,45 @@ public class IdempotencyMiddleware
         {
             await context.Response.Body.WriteAsync(bodyBytes, 0, bodyBytes.Length, context.RequestAborted);
         }
+    }
+
+    private static async Task<bool> IsIdempotencyTableAvailableAsync(AppDbContext db, CancellationToken ct)
+    {
+        try
+        {
+            _ = await db.IdempotencyRecords.AsNoTracking().Take(1).AnyAsync(ct);
+            return true;
+        }
+        catch (Exception ex) when (IsMissingIdempotencyTable(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsMissingIdempotencyTable(Exception ex)
+    {
+        // SQL Server: "Invalid object name 'IdempotencyRecords'." => error 208
+        // (may be localized; check for both error number and message content)
+        for (var cur = ex; cur != null; cur = cur.InnerException)
+        {
+            if (cur is SqlException sqlEx)
+            {
+                if (sqlEx.Number == 208) return true;
+                if ((sqlEx.Message ?? string.Empty).Contains("IdempotencyRecords", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if ((cur.Message ?? string.Empty).Contains("IdempotencyRecords", StringComparison.OrdinalIgnoreCase) &&
+                ((cur.Message ?? string.Empty).Contains("Invalid object name", StringComparison.OrdinalIgnoreCase) ||
+                 (cur.Message ?? string.Empty).Contains("Geçersiz nesne adı", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

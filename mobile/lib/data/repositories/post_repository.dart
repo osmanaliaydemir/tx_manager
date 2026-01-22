@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
+import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:tx_manager_mobile/core/notifications/notification_service.dart';
 import 'package:tx_manager_mobile/core/constants/api_constants.dart';
 import 'package:tx_manager_mobile/core/offline/outbox.dart';
 import 'package:tx_manager_mobile/core/offline/queued_offline_exception.dart';
+import 'package:tx_manager_mobile/core/network/api_dio.dart';
 
 final postRepositoryProvider = Provider(
   (ref) =>
@@ -13,7 +16,7 @@ final postRepositoryProvider = Provider(
 );
 
 class PostRepository {
-  final Dio _dio = Dio();
+  final Dio _dio = createApiDio();
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final NotificationService _notifications;
   final OutboxProcessor _outbox;
@@ -35,6 +38,48 @@ class PostRepository {
       throw Exception('User not authenticated');
     }
     return {'Authorization': 'Bearer $token', if (extra != null) ...extra};
+  }
+
+  bool _shouldEnqueue(DioException e) {
+    // Only queue when it's likely a connectivity / transient infra issue.
+    // If server responded with 4xx (auth/validation), do NOT queue.
+    final status = e.response?.statusCode;
+    if (status != null) {
+      if (status == 401 || status == 403) return false; // login required
+      if (status >= 400 && status < 500 && status != 409 && status != 429) {
+        return false; // client error, won't succeed by retrying
+      }
+      // 409/429/5xx are potentially retryable
+      return status == 409 || status == 429 || status >= 500;
+    }
+
+    // No response -> network-ish
+    if (e.type == DioExceptionType.unknown) {
+      // Unknown can be non-network (e.g. programmer error). Only treat as network
+      // when underlying error is a socket/TLS/HTTP exception.
+      final err = e.error;
+      return err is SocketException ||
+          err is HandshakeException ||
+          err is HttpException;
+    }
+    return e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.connectionError;
+  }
+
+  String _queuedMessage(DioException e, String op) {
+    final status = e.response?.statusCode;
+    if (status == 500 || status == 502 || status == 503 || status == 504) {
+      return 'Sunucu hatası (HTTP $status). İşlem kuyruğa alındı; birazdan tekrar denenecek.';
+    }
+    if (status == 429) {
+      return 'Çok fazla istek (rate limit). İşlem kuyruğa alındı; birazdan tekrar denenecek.';
+    }
+    if (status == 409) {
+      return 'İşlem zaten devam ediyor (409). Kuyruğa alındı; tekrar denenecek.';
+    }
+    return 'Bağlantı sorunu nedeniyle gönderilemedi. İşlem kuyruğa alındı; bağlantı gelince otomatik denenecek.';
   }
 
   Future<List<dynamic>> getPosts({String? status}) async {
@@ -79,14 +124,21 @@ class PostRepository {
         );
       }
       return data;
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:createPost status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.createPost, {
           'content': content,
           'scheduledForUtc': scheduledFor?.toUtc().toIso8601String(),
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Tweet kuyruğa alındı; bağlantı gelince otomatik gönderilecek.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'createPost'),
         );
       }
       rethrow;
@@ -130,14 +182,21 @@ class PostRepository {
         }
       }
       return list;
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:createThread status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.createThread, {
           'contents': contents,
           'scheduledForUtc': scheduledFor?.toUtc().toIso8601String(),
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Thread kuyruğa alındı; bağlantı gelince otomatik gönderilecek.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'createThread'),
         );
       }
       rethrow;
@@ -172,15 +231,22 @@ class PostRepository {
           scheduledForLocal: scheduledFor,
         );
       }
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:updatePost status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.updatePost, {
           'id': id,
           'content': content,
           'scheduledForUtc': scheduledFor?.toUtc().toIso8601String(),
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Güncelleme kuyruğa alındı; bağlantı gelince otomatik uygulanacak.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'updatePost'),
         );
       }
       rethrow;
@@ -200,13 +266,20 @@ class PostRepository {
         options: Options(headers: headers),
       );
       await _notifications.cancelReminder(id);
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:deletePost status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.deletePost, {
           'id': id,
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. Silme işlemi kuyruğa alındı; bağlantı gelince otomatik uygulanacak.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'deletePost'),
         );
       }
       rethrow;
@@ -235,13 +308,20 @@ class PostRepository {
         options: Options(headers: headers),
       );
       await _notifications.cancelReminder(id);
-    } on DioException {
-      if (!fromOutbox) {
+    } on DioException catch (dioException) {
+      if (!fromOutbox && _shouldEnqueue(dioException)) {
+        if (kDebugMode) {
+          debugPrint(
+            'enqueue:cancelSchedule status=${dioException.response?.statusCode} '
+            'type=${dioException.type} err=${dioException.error} '
+            'data=${dioException.response?.data}',
+          );
+        }
         await _outbox.enqueue(OutboxActionType.cancelSchedule, {
           'id': id,
         }, idempotencyKey: key);
-        throw const QueuedOfflineException(
-          'İnternet yok gibi görünüyor. İptal işlemi kuyruğa alındı; bağlantı gelince otomatik uygulanacak.',
+        throw QueuedOfflineException(
+          _queuedMessage(dioException, 'cancelSchedule'),
         );
       }
       rethrow;
