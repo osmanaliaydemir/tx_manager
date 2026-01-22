@@ -8,10 +8,9 @@ class NotificationRouter {
     if (parts.length < 2) return;
 
     final type = parts[0];
-    final postId = parts.sublist(1).join(':');
 
     if (type == 'reminder') {
-      appRouter.go('/approval?postId=$postId');
+      appRouter.go('/home');
       return;
     }
 

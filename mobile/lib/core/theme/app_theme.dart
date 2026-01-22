@@ -69,5 +69,10 @@ class AppTheme {
       hintStyle: const TextStyle(color: textSecondary),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     ),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: primaryColor,
+      selectionColor: primaryDark,
+      selectionHandleColor: primaryColor,
+    ),
   );
 }

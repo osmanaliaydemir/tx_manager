@@ -33,14 +33,9 @@ class _AuthWebViewState extends ConsumerState<AuthWebView> {
 
               if (uri.host == 'auth-success') {
                 final token = uri.queryParameters['token'];
-                final hasStrategyText =
-                    uri.queryParameters['hasStrategy'] ?? '';
-                final hasStrategy =
-                    hasStrategyText.toLowerCase() == 'true' ||
-                    hasStrategyText == '1';
 
                 if (token != null && token.isNotEmpty) {
-                  _handleSuccess(token, hasStrategy);
+                  _handleSuccess(token, false);
                   return NavigationDecision.prevent;
                 }
               } else if (uri.host == 'auth-error') {
@@ -57,6 +52,13 @@ class _AuthWebViewState extends ConsumerState<AuthWebView> {
         ),
       )
       ..loadRequest(Uri.parse(ApiConstants.loginUrl));
+
+    _clearCache();
+  }
+
+  Future<void> _clearCache() async {
+    await _controller.clearCache();
+    await _controller.clearLocalStorage();
   }
 
   Future<void> _handleSuccess(String jwt, bool hasStrategy) async {
@@ -77,11 +79,7 @@ class _AuthWebViewState extends ConsumerState<AuthWebView> {
     await PushRegistrationService.I.initAndRegisterBestEffort();
 
     if (mounted) {
-      if (hasStrategy) {
-        context.go('/home');
-      } else {
-        context.go('/onboarding');
-      }
+      context.go('/home');
     }
   }
 
