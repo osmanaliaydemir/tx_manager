@@ -144,184 +144,188 @@ class _TweetScreenState extends ConsumerState<TweetScreen> {
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _textController,
-              maxLines: 5,
-              style: const TextStyle(fontSize: 16),
-              enableInteractiveSelection: true,
-              decoration: const InputDecoration(
-                hintText: 'Ne paylaşmak istersin?',
-                border: OutlineInputBorder(),
-                filled: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.timer, color: Colors.white70),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _scheduledTime == null
-                          ? 'Hemen gönder'
-                          : 'Zamanlandı: ${DateFormat('dd MMM HH:mm').format(_scheduledTime!)}',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  if (_scheduledTime != null)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      onPressed: () => setState(() => _scheduledTime = null),
-                    ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.calendar_month,
-                      color: AppTheme.primaryColor,
-                    ),
-                    onPressed: _pickDateTime,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isSending ? null : _sendTweet,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _textController,
+                maxLines: 5,
+                style: const TextStyle(fontSize: 16),
+                enableInteractiveSelection: true,
+                decoration: const InputDecoration(
+                  hintText: 'Ne paylaşmak istersin?',
+                  border: OutlineInputBorder(),
+                  filled: true,
                 ),
-                child: _isSending
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        _scheduledTime == null ? 'TWEET AT' : 'ZAMANLA',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
               ),
-            ),
-            const SizedBox(height: 32),
-            const Text(
-              "Zamanlananlar",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: scheduledList.when(
-                data: (posts) {
-                  if (posts.isEmpty) {
-                    return const Center(
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceColor,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.timer, color: Colors.white70),
+                    const SizedBox(width: 12),
+                    Expanded(
                       child: Text(
-                        "Henüz planlanmış tweet yok.",
-                        style: TextStyle(color: Colors.white38),
+                        _scheduledTime == null
+                            ? 'Hemen gönder'
+                            : 'Zamanlandı: ${DateFormat('dd MMM HH:mm').format(_scheduledTime!)}',
+                        style: const TextStyle(color: Colors.white),
                       ),
-                    );
-                  }
-                  return ListView.separated(
-                    itemCount: posts.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final post = posts[index];
-                      final content = post['content'] ?? '';
-                      final dateStr = post['scheduledFor'];
-                      final date = dateStr != null
-                          ? DateTime.tryParse(dateStr)?.toLocal()
-                          : null;
-
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white12),
+                    ),
+                    if (_scheduledTime != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        onPressed: () => setState(() => _scheduledTime = null),
+                      ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.calendar_month,
+                        color: AppTheme.primaryColor,
+                      ),
+                      onPressed: _pickDateTime,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isSending ? null : _sendTweet,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isSending
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                          _scheduledTime == null ? 'TWEET AT' : 'ZAMANLA',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    content,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  if (date != null)
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.schedule,
-                                          size: 14,
-                                          color: AppTheme.primaryColor,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          DateFormat(
-                                            'dd MMM yyyy, HH:mm',
-                                          ).format(date),
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.redAccent,
-                              ),
-                              onPressed: () =>
-                                  _cancelSchedule(post['id'].toString()),
-                            ),
-                          ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                "Zamanlananlar",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: scheduledList.when(
+                  data: (posts) {
+                    if (posts.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          "Henüz planlanmış tweet yok.",
+                          style: TextStyle(color: Colors.white38),
                         ),
                       );
-                    },
-                  );
-                },
-                error: (e, s) => Center(
-                  child: Text(
-                    "Hata oluştu: $e",
-                    style: const TextStyle(color: Colors.red),
+                    }
+                    return ListView.separated(
+                      itemCount: posts.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final post = posts[index];
+                        final content = post['content'] ?? '';
+                        final dateStr = post['scheduledFor'];
+                        final date = dateStr != null
+                            ? DateTime.tryParse(dateStr)?.toLocal()
+                            : null;
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      content,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (date != null)
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.schedule,
+                                            size: 14,
+                                            color: AppTheme.primaryColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            DateFormat(
+                                              'dd MMM yyyy, HH:mm',
+                                            ).format(date),
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.redAccent,
+                                ),
+                                onPressed: () =>
+                                    _cancelSchedule(post['id'].toString()),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                  error: (e, s) => Center(
+                    child: Text(
+                      "Hata oluştu: $e",
+                      style: const TextStyle(color: Colors.red),
+                    ),
                   ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                 ),
-                loading: () => const Center(child: CircularProgressIndicator()),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
